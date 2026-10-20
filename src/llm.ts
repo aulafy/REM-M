@@ -7,6 +7,7 @@ export class OpenAICompatibleLLM implements LLM {
     private apiKey: string,
     private model: string,
     private fetcher: typeof fetch = fetch,
+    private timeoutMs = 300_000,
   ) {}
 
   async complete(system: string, user: string): Promise<string> {
@@ -16,7 +17,7 @@ export class OpenAICompatibleLLM implements LLM {
         method: 'POST',
         headers: { 'content-type': 'application/json', authorization: `Bearer ${this.apiKey}` },
         body: JSON.stringify({ model: this.model, messages: [{ role: 'system', content: system }, { role: 'user', content: user }], temperature: 0.7 }),
-        signal: AbortSignal.timeout(120_000),
+        signal: AbortSignal.timeout(this.timeoutMs),
       });
     } catch (error) {
       const hint = /localhost|127\.0\.0\.1/.test(this.baseUrl) ? ' Is Ollama running? Start it with "ollama serve" and make sure the configured model is installed.' : '';

@@ -85,7 +85,7 @@
   <dialog id="settings-dialog">
     <form id="settings-form">
       <div class="dialog-title"><h2>Settings</h2><button type="button" class="icon" data-close-settings aria-label="Close">×</button></div>
-      <fieldset><legend>LLM</legend><label>Base URL <input name="llmBaseUrl" type="url"></label><div class="two"><label>Model <input name="llmModel"></label><label>API key <input name="llmApiKey" type="password"></label></div><button id="test-llm" type="button" class="secondary">Test LLM connection</button></fieldset>
+      <fieldset><legend>LLM</legend><label>Base URL <input name="llmBaseUrl" type="url"></label><div class="two"><label>Model <input name="llmModel"></label><label>API key <input name="llmApiKey" type="password"></label></div><label>Request timeout (milliseconds) <input name="llmTimeoutMs" type="number" min="1" step="1000"></label><button id="test-llm" type="button" class="secondary">Test LLM connection</button></fieldset>
       <fieldset><legend>WordPress</legend><label>URL <input name="wordpressUrl" type="url"></label><div class="two"><label>Username <input name="wordpressUsername"></label><label>Application password <input name="wordpressPassword" type="password"></label></div></fieldset>
       <fieldset><legend>GitHub</legend><label>Token <input name="githubToken" type="password"></label><div class="two"><label>Repository <input name="githubRepo" placeholder="owner/repo"></label><label>Branch <input name="githubBranch"></label></div></fieldset>
       <fieldset><legend>Webhooks</legend><label>Generic webhook URL <input name="webhookUrl" type="url"></label><label>Webhook secret <input name="webhookSecret" type="password"></label><label>Discord webhook URL <input name="discordWebhookUrl" type="url"></label></fieldset>

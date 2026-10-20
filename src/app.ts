@@ -33,8 +33,21 @@ function sse(operation: (send: (event: string, data: unknown) => void) => Promis
   const encoder = new TextEncoder();
   const stream = new ReadableStream<Uint8Array>({
     start(controller) {
-      const send = (event: string, data: unknown) => controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
-      operation(send).catch((error) => send('error', { error: error instanceof Error ? error.message : String(error) })).finally(() => controller.close());
+      let open = true;
+      let heartbeat: ReturnType<typeof setInterval>;
+      const enqueue = (value: string) => {
+        if (!open) return;
+        try { controller.enqueue(encoder.encode(value)); }
+        catch { open = false; clearInterval(heartbeat); }
+      };
+      const send = (event: string, data: unknown) => enqueue(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+      heartbeat = setInterval(() => enqueue(': keep-alive\n\n'), 15_000);
+      operation(send).catch((error) => send('error', { error: error instanceof Error ? error.message : String(error) })).finally(() => {
+        const shouldClose = open;
+        open = false;
+        clearInterval(heartbeat);
+        if (shouldClose) controller.close();
+      });
     },
   });
   return new Response(stream, { headers: { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', connection: 'keep-alive' } });
@@ -65,7 +78,10 @@ export function createApp({ store, llm, config, fetcher = fetch, publicDir = pat
   const app = new Hono();
   const rate = new Map<string, { count: number; reset: number }>();
   const currentConfig = () => effectiveConfig(config, store.getSettings());
-  const currentLLM = () => llm || new OpenAICompatibleLLM(currentConfig().llmBaseUrl, currentConfig().llmApiKey, currentConfig().llmModel, fetcher);
+  const currentLLM = () => {
+    const active = currentConfig();
+    return llm || new OpenAICompatibleLLM(active.llmBaseUrl, active.llmApiKey, active.llmModel, fetcher, active.llmTimeoutMs);
+  };
 
   app.onError((error, c) => {
     const status = error instanceof AppError ? error.status : 500;

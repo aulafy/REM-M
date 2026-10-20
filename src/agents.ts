@@ -4,7 +4,7 @@ import { auditUrl } from './web.js';
 
 export const agentDefinitions: AgentDefinition[] = [
   { id: 'writer', name: 'Writer', description: 'Drafts useful long-form articles from a topic or keyword.', systemPrompt: 'You are a senior content marketer. Write specific, useful, evidence-conscious prose. Never invent customer claims or statistics. Return polished Markdown.' },
-  { id: 'seo', name: 'SEO', description: 'Runs a deterministic on-page audit and adds prioritized recommendations.', systemPrompt: 'You are a technical SEO specialist. Prioritize concrete fixes from the supplied audit. Do not claim checks that were not performed.' },
+  { id: 'seo', name: 'SEO', description: 'Runs a deterministic on-page audit and adds prioritized recommendations.', systemPrompt: 'You are a technical SEO specialist. The supplied deterministic audit is authoritative: do not contradict it, invent failures, reinterpret passing checks as problems, or claim checks that were not performed. A title between 50 and 60 characters is acceptable. Recommend only changes directly grounded in the supplied findings. Return at most 6 prioritized recommendations, and include the exact audit evidence for every recommendation.' },
   { id: 'geo', name: 'GEO', description: 'Tests brand visibility in simulated buyer questions and drafts a gap analysis.', systemPrompt: 'You specialize in visibility in AI answers. Analyze supplied questions and answers conservatively, then recommend content that makes the brand clearly citable.' },
   { id: 'reddit', name: 'Reddit', description: 'Finds relevant public discussions and drafts helpful, non-promotional replies.', systemPrompt: 'You write genuinely helpful Reddit replies. Answer the question directly, disclose affiliations where relevant, avoid hype, and never pretend to have personal experience.' },
   { id: 'x', name: 'X', description: 'Creates concise posts or threads for X.', systemPrompt: 'You write sharp, credible posts for X. Avoid engagement bait and fabricated facts. Return plain text with thread posts numbered when needed.' },
@@ -31,7 +31,7 @@ async function runSeo(project: Project, task: string, llm: LLM, fetcher: typeof 
   const candidate = task.match(/https?:\/\/\S+/)?.[0] || project.url;
   if (!candidate) throw new AppError('The SEO agent needs a URL in the task or project');
   const audit = await auditUrl(candidate, fetcher, allowPrivateFetch);
-  const recommendations = await llm.complete(agentDefinitions[1].systemPrompt, `${context(project)}\n\nDeterministic audit:\n${JSON.stringify(audit, null, 2)}\n\nGive a prioritized remediation plan in Markdown.`);
+  const recommendations = await llm.complete(agentDefinitions[1].systemPrompt, `${context(project)}\n\nDeterministic audit (authoritative):\n${JSON.stringify(audit, null, 2)}\n\nGive a prioritized remediation plan in Markdown. Use only the errors and warnings reported by the deterministic audit, with no more than 6 recommendations. For each recommendation, quote or precisely restate its supporting audit evidence. Do not recommend changing checks that passed.`);
   const body = `# SEO audit: ${audit.url}\n\n## Deterministic findings\n\n\`\`\`json\n${JSON.stringify(audit, null, 2)}\n\`\`\`\n\n## Recommendations\n\n${recommendations}`;
   return [{ channel: 'seo-report', title: `SEO audit: ${new URL(audit.url).hostname}`, body, metadata: { task, audit } }];
 }

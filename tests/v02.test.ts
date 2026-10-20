@@ -19,10 +19,11 @@ test('settings API masks secrets and preserves a masked key during updates', asy
   try {
     let response = await app.request('/api/settings');
     assert.equal((await response.json()).settings.llmApiKey, '••••alue');
-    response = await app.request('/api/settings', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ llmApiKey: '••••alue', llmModel: 'new-model' }) });
+    response = await app.request('/api/settings', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ llmApiKey: '••••alue', llmModel: 'new-model', llmTimeoutMs: '45000' }) });
     const settings = (await response.json()).settings;
     assert.equal(settings.llmApiKey, '••••alue');
     assert.equal(settings.llmModel, 'new-model');
+    assert.equal(settings.llmTimeoutMs, '45000');
     assert.equal(store.getSettings().llmApiKey, undefined);
   } finally { store.close(); }
 });

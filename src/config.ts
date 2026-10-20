@@ -7,6 +7,7 @@ export interface Config {
   llmBaseUrl: string;
   llmApiKey: string;
   llmModel: string;
+  llmTimeoutMs: number;
   markdownExportDir: string;
   wordpress: { url: string; username: string; password: string };
   github: { token: string; repo: string; branch: string };
@@ -19,6 +20,8 @@ export interface Config {
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const port = Number(env.PORT ?? 3000);
   if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('PORT must be a valid TCP port');
+  const llmTimeoutMs = Number(env.LLM_TIMEOUT_MS ?? 300_000);
+  if (!Number.isInteger(llmTimeoutMs) || llmTimeoutMs < 1) throw new Error('LLM_TIMEOUT_MS must be a positive integer');
   return {
     port,
     host: env.HOST || '127.0.0.1',
@@ -26,6 +29,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     llmBaseUrl: (env.LLM_BASE_URL || 'http://localhost:11434/v1').replace(/\/$/, ''),
     llmApiKey: env.LLM_API_KEY || 'ollama',
     llmModel: env.LLM_MODEL || 'llama3.2',
+    llmTimeoutMs,
     markdownExportDir: path.resolve(env.MARKDOWN_EXPORT_DIR || './exports'),
     wordpress: {
       url: (env.WP_URL || '').replace(/\/$/, ''),

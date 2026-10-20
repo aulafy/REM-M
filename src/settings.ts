@@ -1,7 +1,7 @@
 import type { Config } from './config.js';
 
 export const settingKeys = [
-  'llmBaseUrl', 'llmModel', 'llmApiKey',
+  'llmBaseUrl', 'llmModel', 'llmApiKey', 'llmTimeoutMs',
   'wordpressUrl', 'wordpressUsername', 'wordpressPassword',
   'githubToken', 'githubRepo', 'githubBranch',
   'webhookUrl', 'webhookSecret',
@@ -12,11 +12,13 @@ export const secretSettingKeys = new Set<string>(['llmApiKey', 'wordpressPasswor
 
 export function effectiveConfig(defaults: Config, settings: Record<string, string>): Config {
   const value = (key: string, fallback: string) => settings[key] ?? fallback;
+  const configuredTimeout = Number(value('llmTimeoutMs', String(defaults.llmTimeoutMs)));
   return {
     ...defaults,
     llmBaseUrl: value('llmBaseUrl', defaults.llmBaseUrl).replace(/\/$/, ''),
     llmModel: value('llmModel', defaults.llmModel),
     llmApiKey: value('llmApiKey', defaults.llmApiKey),
+    llmTimeoutMs: Number.isInteger(configuredTimeout) && configuredTimeout > 0 ? configuredTimeout : defaults.llmTimeoutMs,
     wordpress: {
       url: value('wordpressUrl', defaults.wordpress.url).replace(/\/$/, ''),
       username: value('wordpressUsername', defaults.wordpress.username),
@@ -35,7 +37,7 @@ export function effectiveConfig(defaults: Config, settings: Record<string, strin
 
 export function publicSettings(config: Config): Record<string, string> {
   const values: Record<string, string> = {
-    llmBaseUrl: config.llmBaseUrl, llmModel: config.llmModel, llmApiKey: config.llmApiKey,
+    llmBaseUrl: config.llmBaseUrl, llmModel: config.llmModel, llmApiKey: config.llmApiKey, llmTimeoutMs: String(config.llmTimeoutMs),
     wordpressUrl: config.wordpress.url, wordpressUsername: config.wordpress.username, wordpressPassword: config.wordpress.password,
     githubToken: config.github.token, githubRepo: config.github.repo, githubBranch: config.github.branch,
     webhookUrl: config.webhook.url, webhookSecret: config.webhook.secret,

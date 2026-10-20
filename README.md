@@ -21,13 +21,13 @@ ollama pull llama3.2
 ollama serve
 ```
 
-Change `LLM_BASE_URL`, `LLM_API_KEY`, and `LLM_MODEL` in `.env` to use another compatible provider. Project data is stored in `data/opencmo.sqlite`. Markdown publications go to `exports/` by default.
+Change `LLM_BASE_URL`, `LLM_API_KEY`, and `LLM_MODEL` in `.env` to use another compatible provider. `LLM_TIMEOUT_MS` controls the request timeout and defaults to 300000 (five minutes), which is useful for slower local models; it can also be changed in Settings. Project data is stored in `data/opencmo.sqlite`. Markdown publications go to `exports/` by default.
 
 ## What v0.2 includes
 
 - URL onboarding and an LLM-generated strategy covering positioning, ICP, keyword themes, competitors to investigate, and channels
 - Writer, SEO, GEO, Reddit, X, LinkedIn, Newsletter, and HN/Product Hunt launch agents
-- Deterministic SEO checks for title, description, H1s, links, image alt text, canonical URL, robots.txt, and sitemap.xml
+- Deterministic SEO checks for title, description, H1s, links, image alt text, canonical URL, Open Graph and Twitter tags, HTML language, JSON-LD, up to 20 internal links, robots.txt, and sitemap.xml
 - Reddit public JSON research with copy-only, human-reviewed reply drafts
 - A draft inbox with editing and enforced `pending → approved → published` workflow (rejection and re-approval are supported)
 - Markdown, WordPress REST, GitHub Contents API, generic webhook, Telegram, and Discord connectors
