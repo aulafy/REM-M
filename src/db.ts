@@ -414,8 +414,11 @@ export class Store {
     const since = new Date(Date.now() - 86_400_000).toISOString();
     const rows = this.db.prepare('SELECT * FROM llm_calls WHERE at > ? ORDER BY id DESC').all(since) as Array<{ ms: number; tokens_in: number; tokens_out: number; status: string; purpose: string; model: string; at: string; error: string }>;
     const ok = rows.filter((row) => row.status === 'ok');
-    const timed = ok.filter((row) => row.ms > 0 && row.tokens_out > 0).slice(0, 20);
-    const tokensPerSecond = timed.length ? Number((timed.reduce((sum, row) => sum + row.tokens_out, 0) / (timed.reduce((sum, row) => sum + row.ms, 0) / 1000)).toFixed(1)) : 0;
+    // Per-call speed, ignoring tiny calls. The first call after a model loads is slow (cold start), so use the 75th percentile,
+    // and with fewer than 3 samples do not let a single cold call drag the estimate below a realistic floor.
+    const speeds = ok.filter((row) => row.ms > 0 && row.tokens_out >= 100).slice(0, 20).map((row) => row.tokens_out / (row.ms / 1000)).sort((a, b) => a - b);
+    const percentile = speeds.length ? speeds[Math.min(speeds.length - 1, Math.floor(speeds.length * 0.75))] : 0;
+    const tokensPerSecond = speeds.length ? Number((speeds.length < 3 ? Math.max(percentile, 8) : percentile).toFixed(1)) : 0;
     return { calls24h: rows.length, errors24h: rows.length - ok.length, avgMs: ok.length ? Math.round(ok.reduce((sum, row) => sum + row.ms, 0) / ok.length) : 0, tokens24h: rows.reduce((sum, row) => sum + row.tokens_in + row.tokens_out, 0), tokensPerSecond, recent: rows.slice(0, 12) };
   }
 
