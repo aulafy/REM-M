@@ -86,7 +86,7 @@ export function trimWords(value: string, max = 450): string {
 
 export function bodySystemPrompt(project: Project, channel: string): string {
   const limits: Record<string, string> = { x: 'one X post of at most 280 characters', linkedin: 'a LinkedIn post of at most 1300 characters', newsletter: 'a concise newsletter of at most 1200 words', blog: 'a useful article of at most 900 words' };
-  return `Write ${limits[channel] || 'concise marketing copy'} in ${project.language === 'es' ? 'Spanish' : 'English'}. Return only the finished body. Use supplied knowledge only as facts, preserve [K#] citations when relevant, avoid clichés and invented claims.`;
+  return `Write ${limits[channel] || 'concise marketing copy'} in ${project.language === 'es' ? 'Spanish' : 'English'}. Return only the finished body. Use supplied knowledge only as facts, preserve [K#] citations when relevant, avoid clichés and invented claims. Never make negative or comparative claims about named competitors or third parties (no "X is worse/outdated/dead"); describe only this business and its verifiable features.`;
 }
 
 export function enforceBodyLimit(channel: string, body: string): string {

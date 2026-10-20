@@ -190,7 +190,7 @@ export function createApp({ store, llm, config, fetcher = fetch, publicDir = pat
       const existing = store.listDrafts(project.id).filter((draft) => draft.metadata.monthJobId === initial.id && draft.metadata.outlineBatch === batch);
       if (existing.length >= expected) { offset += expected; continue; }
       context.update({ message: `${project.language === 'es' ? 'Planificando semana' : 'Planning week'} ${batch + 1}/4`, payload: { ...context.assertActive().payload, outlineBatch: batch } });
-      const system = `You are a practical content planner. Return only a compact JSON array of exactly ${expected} objects with keys topic, title, channel, angle. No bodies. Allowed channels: blog, linkedin, x, newsletter. Write in ${project.language === 'es' ? 'Spanish' : 'English'}. Vary formats and search intent; avoid clichés and invented claims.`;
+      const system = `You are a practical content planner. Return only a compact JSON array of exactly ${expected} objects with keys topic, title, channel, angle. No bodies. Allowed channels: blog, linkedin, x, newsletter. Write in ${project.language === 'es' ? 'Spanish' : 'English'}. Vary formats and search intent; avoid clichés and invented claims. Do not name competitors or build titles as comparisons against named brands.`;
       const user = `Week ${batch + 1} of 4. Do not repeat these titles: ${[...used].join(' | ')}\nProject: ${JSON.stringify(project)}\n${formatKnowledgeData(searchKnowledge(store.listKnowledgeChunks(project.id), `${project.name} ${project.strategy || ''}`, { k: 6 }))}`;
       let raw = await currentLLM(`month-plan:outline:${batch + 1}`).complete(system, user, context.signal); let outline;
       try { outline = parseOutlineBatch(raw, expected); }
