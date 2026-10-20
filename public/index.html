@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>OpenCMO</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div class="shell">
+    <aside>
+      <div class="brand"><span>O</span> OpenCMO</div>
+      <button id="new-project" class="primary wide">+ New project</button>
+      <p class="eyebrow">Projects</p>
+      <nav id="projects" aria-label="Projects"></nav>
+      <p class="local-note">Local-first · approval required</p>
+    </aside>
+    <main>
+      <header>
+        <div>
+          <p class="eyebrow">Workspace</p>
+          <h1 id="project-title">Welcome to OpenCMO</h1>
+        </div>
+        <span id="status" role="status"></span>
+      </header>
+
+      <section id="empty" class="empty card">
+        <h2>Create your first marketing workspace</h2>
+        <p>Add a business and its URL. OpenCMO can research its site, build a strategy, and draft work for your approval.</p>
+        <button class="primary" data-open-project>Create project</button>
+      </section>
+
+      <div id="workspace" hidden>
+        <div class="tabs" role="tablist">
+          <button class="tab active" data-tab="strategy">Strategy</button>
+          <button class="tab" data-tab="agents">Agents</button>
+          <button class="tab" data-tab="inbox">Inbox <span id="pending-count" class="count">0</span></button>
+        </div>
+
+        <section id="strategy" class="panel active">
+          <div class="panel-heading"><div><h2>Marketing strategy</h2><p>Grounded in your website and business details.</p></div><button id="generate-strategy" class="primary">Generate strategy</button></div>
+          <article id="strategy-content" class="card prose muted">No strategy yet. Generate one after configuring your local LLM.</article>
+        </section>
+
+        <section id="agents" class="panel">
+          <div class="panel-heading"><div><h2>Marketing agents</h2><p>Choose an agent, describe the assignment, then review its drafts.</p></div></div>
+          <div id="agent-grid" class="agent-grid"></div>
+          <form id="run-form" class="card run-box">
+            <label for="task">Assignment for <strong id="selected-agent">Writer</strong></label>
+            <textarea id="task" placeholder="Example: Write an article about choosing analytics software for a small team" required></textarea>
+            <button class="primary" type="submit">Run agent</button>
+          </form>
+        </section>
+
+        <section id="inbox" class="panel">
+          <div class="panel-heading"><div><h2>Draft inbox</h2><p>Edit, approve, reject, and publish. Publishing is disabled until approval.</p></div><select id="draft-filter"><option value="">All statuses</option><option>pending</option><option>approved</option><option>rejected</option><option>published</option></select></div>
+          <div id="drafts"></div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <dialog id="project-dialog">
+    <form id="project-form">
+      <div class="dialog-title"><h2>New project</h2><button type="button" class="icon" data-close aria-label="Close">×</button></div>
+      <label>Business name <input name="name" required placeholder="Acme Studio"></label>
+      <label>Website URL <input name="url" type="url" placeholder="https://example.com"></label>
+      <label>Description <textarea name="description" placeholder="What does the business offer?"></textarea></label>
+      <div class="two"><label>Audience <input name="audience" placeholder="Small design teams"></label><label>Tone <input name="tone" placeholder="Clear and practical"></label></div>
+      <button class="primary wide" type="submit">Create project</button>
+    </form>
+  </dialog>
+  <script type="module" src="/app.js"></script>
+</body>
+</html>
