@@ -3,13 +3,37 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>OpenCMO</title>
+  <title>OpenCMO — Marketing workspace</title>
+  <meta name="theme-color" content="#f7f8fa">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.svg">
   <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
+  <svg class="icon-sprite" aria-hidden="true">
+    <symbol id="i-logo" viewBox="0 0 24 24"><path d="M12 3 4.5 7.25v9.5L12 21l7.5-4.25v-9.5L12 3Z"/><path d="m8.4 14.2 3.6-6 3.6 6M9.6 12.2h4.8"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-grid" viewBox="0 0 24 24"><rect x="4" y="4" width="6" height="6" rx="1"/><rect x="14" y="4" width="6" height="6" rx="1"/><rect x="4" y="14" width="6" height="6" rx="1"/><rect x="14" y="14" width="6" height="6" rx="1"/></symbol>
+    <symbol id="i-home" viewBox="0 0 24 24"><path d="m4 11 8-7 8 7v9h-6v-6h-4v6H4v-9Z"/></symbol>
+    <symbol id="i-inbox" viewBox="0 0 24 24"><path d="M5 4h14l2 10v6H3v-6L5 4Z"/><path d="M3 14h5l2 3h4l2-3h5"/></symbol>
+    <symbol id="i-calendar" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M7 3v4m10-4v4M3 10h18"/></symbol>
+    <symbol id="i-book" viewBox="0 0 24 24"><path d="M4 5.5A3.5 3.5 0 0 1 7.5 2H11v18H7.5A3.5 3.5 0 0 0 4 23V5.5ZM20 5.5A3.5 3.5 0 0 0 16.5 2H13v18h3.5A3.5 3.5 0 0 1 20 23V5.5Z"/></symbol>
+    <symbol id="i-report" viewBox="0 0 24 24"><path d="M6 3h9l4 4v14H6V3Z"/><path d="M15 3v5h5M9 16v-3m3 3V9m3 7v-5"/></symbol>
+    <symbol id="i-settings" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06-2.83 2.83-.06-.06A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 .6 1.7 1.7 0 0 0-.4 1V21h-4v-.1A1.7 1.7 0 0 0 8.6 19.4a1.7 1.7 0 0 0-1.87.34l-.06.06-2.83-2.83.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-.6-1 1.7 1.7 0 0 0-1-.4H3v-4h.1A1.7 1.7 0 0 0 4.6 8.6a1.7 1.7 0 0 0-.34-1.87l-.06-.06 2.83-2.83.06.06A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-.6 1.7 1.7 0 0 0 .4-1V3h4v.1A1.7 1.7 0 0 0 15.4 4.6a1.7 1.7 0 0 0 1.87-.34l.06-.06 2.83 2.83-.06.06A1.7 1.7 0 0 0 19.4 9c.13.38.34.72.6 1 .28.27.64.4 1 .4h.1v4H21c-.38 0-.73.13-1 .4-.27.28-.47.62-.6 1Z"/></symbol>
+    <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M4.93 4.93l1.42 1.42m11.3 11.3 1.42 1.42M2 12h2m16 0h2M4.93 19.07l1.42-1.42m11.3-11.3 1.42-1.42"/></symbol>
+    <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20 15.5A8 8 0 0 1 8.5 4 8.5 8.5 0 1 0 20 15.5Z"/></symbol>
+    <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></symbol>
+    <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 3 2.5 20h19L12 3Z"/><path d="M12 9v4m0 3h.01"/></symbol>
+    <symbol id="i-close" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></symbol>
+    <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></symbol>
+    <symbol id="i-spark" viewBox="0 0 24 24"><path d="m12 3 1.4 4.6L18 9l-4.6 1.4L12 15l-1.4-4.6L6 9l4.6-1.4L12 3Zm6 11 .8 2.2L21 17l-2.2.8L18 20l-.8-2.2L15 17l2.2-.8L18 14Z"/></symbol>
+    <symbol id="i-command" viewBox="0 0 24 24"><path d="M9 6a3 3 0 1 0-3 3h3V6Zm0 3v6H6a3 3 0 1 0 3 3v-3h6v3a3 3 0 1 0 3-3h-3V9h3a3 3 0 1 0-3-3v3H9Z"/></symbol>
+  </svg>
   <section id="wizard" class="wizard" hidden aria-labelledby="wizard-title">
     <div class="wizard-card">
-      <div class="wizard-top"><div class="brand dark"><span>O</span> OpenCMO</div><button id="skip-wizard" class="secondary" data-i18n="skip">Skip for now</button></div>
+      <div class="wizard-top"><div class="brand dark"><svg class="brand-mark"><use href="#i-logo"/></svg><span>OpenCMO</span></div><button id="skip-wizard" class="secondary" data-i18n="skip">Skip for now</button></div>
       <div class="steps" aria-label="Setup progress"><span class="active">1</span><i></i><span>2</span><i></i><span>3</span></div>
       <section class="wizard-step active" data-step="1">
         <p class="eyebrow" data-i18n="setupMinute">SETUP · ABOUT 3 MINUTES</p><h1 id="wizard-title" data-i18n="chooseAi">Choose your AI engine</h1><p data-i18n="chooseAiHelp">Your data stays on this computer unless you choose a cloud provider.</p>
@@ -30,22 +54,36 @@
     </div>
   </section>
   <div class="shell">
-    <aside>
-      <div class="brand"><span>O</span> OpenCMO</div>
-      <button id="new-project" class="primary wide" data-i18n="newProject">+ New project</button>
-      <button id="agency-overview-button" class="aside-button">▦ Agency overview</button>
-      <button id="open-settings" class="aside-button" data-i18n="settingsButton">⚙ Settings</button>
-      <p class="eyebrow" data-i18n="projects">Projects</p>
-      <nav id="projects" aria-label="Projects"></nav>
-      <p class="local-note" data-i18n="localNote">Local-first · approval required</p>
+    <aside id="sidebar">
+      <div class="sidebar-head"><div class="brand"><svg class="brand-mark"><use href="#i-logo"/></svg><span>OpenCMO</span></div><button id="close-mobile-nav" class="icon-button mobile-only" aria-label="Close navigation"><svg><use href="#i-close"/></svg></button></div>
+      <button id="new-project" class="primary wide"><svg><use href="#i-plus"/></svg><span data-i18n="newProject">New project</span></button>
+      <div class="project-switcher">
+        <label class="search-field"><svg><use href="#i-search"/></svg><span class="sr-only">Search projects</span><input id="project-search" type="search" placeholder="Search projects" autocomplete="off"></label>
+        <nav id="projects" aria-label="Projects"></nav>
+      </div>
+      <nav class="main-nav" aria-label="Workspace">
+        <p class="nav-label">Workspace</p>
+        <button id="agency-overview-button" data-nav="overview"><svg><use href="#i-grid"/></svg><span>Overview</span></button>
+        <button data-nav-tab="today" class="active"><svg><use href="#i-home"/></svg><span data-i18n="today">Today</span></button>
+        <button data-nav-tab="inbox"><svg><use href="#i-inbox"/></svg><span data-i18n="inbox">Inbox</span><span id="nav-pending-count" class="count">0</span></button>
+        <button data-nav-tab="calendar"><svg><use href="#i-calendar"/></svg><span data-i18n="calendar">Calendar</span></button>
+        <button data-nav-tab="knowledge"><svg><use href="#i-book"/></svg><span data-i18n="knowledge">Knowledge</span></button>
+        <button data-nav-tab="strategy"><svg><use href="#i-report"/></svg><span data-i18n="strategy">Strategy</span></button>
+        <button data-nav-tab="agents"><svg><use href="#i-spark"/></svg><span data-i18n="agents">Agents</span></button>
+        <button data-nav-tab="policy"><svg><use href="#i-check"/></svg><span data-i18n="rules">Rules</span></button>
+      </nav>
+      <div class="sidebar-footer">
+        <button id="open-settings"><svg><use href="#i-settings"/></svg><span data-i18n="settingsButton">Settings</span></button>
+        <p class="local-note" data-i18n="localNote">Local-first · approval required</p>
+      </div>
     </aside>
     <main>
       <header>
-        <div>
-          <p class="eyebrow" data-i18n="workspace">Workspace</p>
-          <h1 id="project-title">Welcome to OpenCMO</h1>
+        <div class="header-title">
+          <button id="mobile-nav-toggle" class="icon-button mobile-only" aria-label="Open navigation"><svg><use href="#i-menu"/></svg></button>
+          <div><div class="breadcrumb"><span>Workspace</span><svg><use href="#i-chevron"/></svg><span id="breadcrumb-view">Today</span></div><h1 id="project-title">Welcome to OpenCMO</h1></div>
         </div>
-        <div class="header-tools"><div id="job-chip" class="job-chip" hidden><span class="spinner"></span><strong></strong><button type="button" class="job-action"></button></div><span id="demo-badge" class="demo-badge" hidden>DEMO</span><button id="delete-demo" class="danger" hidden data-i18n="deleteDemo">Delete demo</button><button id="shortcut-help" class="icon-help" aria-label="Keyboard shortcuts">?</button><select id="workspace-language" hidden aria-label="Project language"><option value="en">English</option><option value="es">Español</option></select><span id="status" role="status"></span></div>
+        <div class="header-tools"><div id="job-chip" class="job-chip" hidden><span class="spinner"></span><strong></strong><button type="button" class="job-action"></button></div><button id="health-pill" class="health-pill" hidden data-nav-tab="today"><span></span><strong>—</strong></button><span id="demo-badge" class="demo-badge" hidden>Demo</span><button id="delete-demo" class="danger small" hidden data-i18n="deleteDemo">Delete demo</button><button id="theme-toggle" class="icon-button" aria-label="Toggle theme" data-tooltip="Theme"><svg class="theme-light"><use href="#i-sun"/></svg><svg class="theme-dark"><use href="#i-moon"/></svg></button><button id="shortcut-help" class="icon-button" aria-label="Keyboard shortcuts" data-tooltip="Shortcuts"><svg><use href="#i-command"/></svg></button><select id="workspace-language" hidden aria-label="Project language"><option value="en">English</option><option value="es">Español</option></select><span id="status" class="sr-only" role="status"></span></div>
       </header>
 
       <section id="empty" class="empty card">
@@ -55,12 +93,12 @@
       </section>
 
       <section id="agency-overview" hidden>
-        <div class="panel-heading"><div><p class="eyebrow">AGENCY VIEW</p><h2>All client projects</h2><p>Health, approvals, scheduling, and overdue work in one place.</p></div></div>
+        <div class="panel-heading"><div><p class="eyebrow">Agency view</p><h2>All client projects</h2><p>Health, approvals, scheduling, and overdue work in one place.</p></div><div class="segmented"><button id="overview-cards" class="active">Cards</button><button id="overview-table">Table</button></div></div>
         <div id="agency-projects" class="overview-grid skeleton"></div>
       </section>
 
       <div id="workspace" hidden>
-        <div class="tabs" role="tablist">
+        <div class="tabs secondary-tabs" role="tablist" aria-label="Project views">
           <button class="tab active" data-tab="today" data-i18n="today">Today</button>
           <button class="tab" data-tab="strategy" data-i18n="strategy">Strategy</button>
           <button class="tab" data-tab="knowledge" data-i18n="knowledge">Knowledge</button>
@@ -72,7 +110,7 @@
 
         <section id="today" class="panel active">
           <div class="panel-heading"><div><h2 data-i18n="todayTitle">Today</h2><p data-i18n="todayHelp">A short, practical view of what moves your marketing forward.</p></div><div class="heading-actions"><button id="export-report" class="secondary">Export report</button><button id="generate-month" class="primary" data-i18n="generateMonth">Generate my month</button></div></div>
-          <div id="today-dashboard" class="dashboard skeleton"><div class="card"></div><div class="card"></div><div class="card"></div></div>
+          <div id="today-dashboard" class="dashboard skeleton"><div class="kpi-grid"><div class="card"></div><div class="card"></div><div class="card"></div><div class="card"></div></div><div class="card"></div></div>
           <section class="product-tools">
             <article class="card"><h3>Search Console opportunities</h3><p class="muted">Upload the Queries CSV export. It stays on this computer.</p><label class="file-action">Queries CSV <input id="gsc-file" type="file" accept=".csv,text/csv"></label><div id="gsc-opportunities"></div></article>
             <article class="card"><h3>Competitor comparison</h3><p class="muted">Add up to five public URLs. The table uses measured page data, not AI.</p><form id="competitor-form"><label>Competitor URLs, one per line<textarea id="competitor-urls" rows="4" placeholder="https://competitor.example"></textarea></label><button class="primary" type="submit">Run comparison</button></form><div id="competitor-results"></div></article>
@@ -104,14 +142,16 @@
         </section>
 
         <section id="inbox" class="panel">
-          <div class="panel-heading"><div><h2>Draft inbox</h2><p>Edit, approve, reject, and publish. Publishing is disabled until approval.</p></div><select id="draft-filter"><option value="">All statuses</option><option>pending</option><option>approved</option><option>rejected</option><option>published</option></select></div>
-          <div class="bulk"><button id="select-all" class="secondary">Select all</button><button id="bulk-approve" class="secondary">Approve selected</button><button id="bulk-reject" class="danger">Reject selected</button><small>Shortcuts: a approve · r reject · e edit focused draft</small></div>
-          <div id="drafts"></div>
+          <div class="panel-heading"><div><h2>Draft inbox</h2><p>Edit, approve, reject, and publish. Publishing is disabled until approval.</p></div></div>
+          <div class="inbox-toolbar"><label class="search-field"><svg><use href="#i-search"/></svg><span class="sr-only">Search drafts</span><input id="draft-search" type="search" placeholder="Search drafts"></label><select id="draft-filter" aria-label="Filter drafts"><option value="">All statuses</option><option>pending</option><option>approved</option><option>rejected</option><option>published</option></select></div>
+          <div id="bulk-bar" class="bulk"><button id="select-all" class="secondary small">Select all</button><button id="bulk-approve" class="secondary small">Approve selected</button><button id="bulk-reject" class="danger small">Reject selected</button><small>Shortcuts: a approve · r reject · e edit focused draft</small></div>
+          <div id="drafts" class="inbox-workspace"><div class="draft-list skeleton"></div><div class="draft-editor skeleton"></div></div>
         </section>
 
         <section id="calendar" class="panel">
-          <div class="panel-heading"><div><h2>Content calendar</h2><p>Approved drafts scheduled for automatic publishing.</p></div></div>
-          <div id="calendar-list"></div>
+          <div class="panel-heading"><div><h2>Content calendar</h2><p>Plan drafts by date, then publish only after approval.</p></div><div class="calendar-actions"><div class="segmented"><button id="calendar-month-view" class="active">Month</button><button id="calendar-week-view">Week</button></div><button id="calendar-today" class="secondary small">Today</button></div></div>
+          <div class="calendar-nav"><button id="calendar-prev" class="icon-button" aria-label="Previous period"><svg class="flip"><use href="#i-chevron"/></svg></button><h3 id="calendar-label"></h3><button id="calendar-next" class="icon-button" aria-label="Next period"><svg><use href="#i-chevron"/></svg></button></div>
+          <div id="calendar-list" class="calendar-grid"></div>
         </section>
 
         <section id="policy" class="panel">
@@ -128,7 +168,7 @@
 
   <dialog id="project-dialog">
     <form id="project-form">
-      <div class="dialog-title"><h2>New project</h2><button type="button" class="icon" data-close aria-label="Close">×</button></div>
+      <div class="dialog-title"><h2>New project</h2><button type="button" class="icon-button" data-close aria-label="Close"><svg><use href="#i-close"/></svg></button></div>
       <label>Business name <input name="name" required placeholder="Acme Studio"></label>
       <label>Website URL <input name="url" type="url" placeholder="https://example.com"></label>
       <button id="profile-site" type="button" class="secondary">Read website and prefill</button>
@@ -138,9 +178,10 @@
       <button class="primary wide" type="submit">Create project</button>
     </form>
   </dialog>
-  <dialog id="settings-dialog">
+  <dialog id="settings-dialog" class="settings-dialog">
     <form id="settings-form">
-      <div class="dialog-title"><h2>Settings</h2><button type="button" class="icon" data-close-settings aria-label="Close">×</button></div>
+      <div class="dialog-title settings-heading"><div><p class="eyebrow">Workspace</p><h2>Settings</h2><p>Configure your AI, reports, connections, and local data.</p></div><button type="button" class="icon-button" data-close-settings aria-label="Close"><svg><use href="#i-close"/></svg></button></div>
+      <div class="connection-status"><span class="status-dot"></span><div><strong>AI connection</strong><small id="connection-label">Not tested in this session</small></div></div>
       <fieldset><legend data-i18n="basic">Basic</legend><label><span data-i18n="aiEngine">AI engine URL</span><input name="llmBaseUrl" type="url"></label><div class="two"><label><span data-i18n="model">Model</span><input name="llmModel"></label><label><span data-i18n="apiKey">API key</span><input name="llmApiKey" type="password"></label></div><label>Fast model for draft bodies (optional)<input name="llmFastModel" placeholder="qwen3:4b"></label><label><span data-i18n="language">Language</span><select name="uiLanguage"><option value="en">English</option><option value="es">Español</option></select></label><label><span data-i18n="exportFolder">Export folder</span><input name="markdownExportDir"></label><button id="test-llm" type="button" class="secondary" data-i18n="testConnection">Test AI connection</button><button id="restart-wizard" type="button" class="secondary" data-i18n="restartWizard">Run setup wizard again</button></fieldset>
       <fieldset><legend>Branding for client reports</legend><label>Agency name <input name="brandingAgencyName" placeholder="Your agency"></label><div class="two"><label>Accent color <input name="brandingAccentColor" type="color" value="#176a46"></label><label><input class="inline-check" name="brandingPoweredBy" type="checkbox" value="1"> Show “Powered by OpenCMO”</label></div><label>Logo (embedded in reports) <input id="branding-logo-file" type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml"><input name="brandingLogoData" type="hidden"></label></fieldset>
       <details class="advanced-settings"><summary data-i18n="advanced">Advanced</summary>
@@ -153,10 +194,11 @@
       <fieldset><legend>Telegram</legend><div class="two"><label>Bot token <input name="telegramBotToken" type="password"></label><label>Chat ID <input name="telegramChatId"></label></div></fieldset>
       <fieldset><legend>Backups & integrity</legend><p id="integrity-status"></p><div id="backup-list"></div><button id="create-backup" type="button" class="secondary">Create backup now</button></fieldset>
       </details>
-      <button class="primary wide" type="submit">Save settings</button>
+      <div class="sticky-save"><span>Changes stay on this computer.</span><button class="primary" type="submit">Save settings</button></div>
     </form>
   </dialog>
-  <dialog id="shortcut-dialog"><div class="shortcut-box"><div class="dialog-title"><h2 data-i18n="shortcuts">Keyboard shortcuts</h2><button type="button" class="icon" data-close-shortcuts aria-label="Close">×</button></div><p><kbd>?</kbd> <span data-i18n="showHelp">Show this help</span></p><p><kbd>A</kbd> <span data-i18n="approveFocused">Approve focused draft</span></p><p><kbd>R</kbd> <span data-i18n="rejectFocused">Reject focused draft</span></p><p><kbd>E</kbd> <span data-i18n="editFocused">Edit focused draft</span></p></div></dialog>
+  <dialog id="calendar-dialog"><form id="calendar-form"><div class="dialog-title"><div><p class="eyebrow">Calendar</p><h2>Schedule a draft</h2></div><button type="button" class="icon-button" data-close-calendar aria-label="Close"><svg><use href="#i-close"/></svg></button></div><label>Approved draft<select name="draftId" required></select></label><label>Connector<select name="connector" required></select></label><label>Date and time<input name="scheduledAt" type="datetime-local" required></label><button class="primary" type="submit">Schedule draft</button></form></dialog>
+  <dialog id="shortcut-dialog"><div class="shortcut-box"><div class="dialog-title"><h2 data-i18n="shortcuts">Keyboard shortcuts</h2><button type="button" class="icon-button" data-close-shortcuts aria-label="Close"><svg><use href="#i-close"/></svg></button></div><p><kbd>?</kbd> <span data-i18n="showHelp">Show this help</span></p><p><kbd>A</kbd> <span data-i18n="approveFocused">Approve focused draft</span></p><p><kbd>R</kbd> <span data-i18n="rejectFocused">Reject focused draft</span></p><p><kbd>E</kbd> <span data-i18n="editFocused">Edit focused draft</span></p></div></dialog>
   <div id="toasts" aria-live="polite"></div>
   <script type="module" src="/app-v04.js"></script>
 </body>

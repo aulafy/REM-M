@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.7.0
+
+- Added a cohesive visual design system with semantic color, spacing, type, radius, shadow, component, dark-theme, reduced-motion, and print tokens.
+- Reworked the app shell with a searchable project switcher, sectioned sidebar, breadcrumb top bar, health and job indicators, responsive slide-over navigation, and persistent manual theme selection.
+- Upgraded Today with a four-KPI summary, ranked actions, site health, schedule, briefing, and recent activity surfaces.
+- Rebuilt Inbox as a searchable split view with a compact draft list, focused editor, quality and source details, bulk controls, and existing keyboard actions.
+- Added month/week calendar grids with period navigation and click-to-schedule for approved drafts.
+- Added an escaped, dependency-free Markdown renderer for strategies with XSS regression coverage.
+- Refined Settings into a sectioned drawer with sticky save controls and visible AI connection state, plus card/table agency overview modes.
+- Added a reusable SVG icon set, new logo mark, favicon and touch icon, professional project metadata, documentation, and contribution templates.
+
 ## 0.6.0
 
 - Added persistent background jobs with restart recovery, serialized LLM work, live SSE progress, cancellation, retry, and a persistent UI progress chip.

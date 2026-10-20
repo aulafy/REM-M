@@ -1,8 +1,12 @@
 # OpenCMO
 
-OpenCMO is a local-first, open-source “AI CMO.” It researches a business, builds a marketing strategy, runs focused marketing agents, and puts every output into a review inbox. **Nothing is published until a human explicitly approves it.**
+**A local-first marketing workspace that researches, plans, and drafts—while keeping every publication behind human approval.**
 
-It uses an OpenAI-compatible LLM endpoint and defaults to a local [Ollama](https://ollama.com/) server. The app itself has no required cloud service.
+OpenCMO gives founders, freelancers, and small agencies one professional workspace for strategy, brand knowledge, multi-channel drafts, content planning, client reporting, and controlled publishing. It works with any OpenAI-compatible model and defaults to local [Ollama](https://ollama.com/); the app itself requires no cloud service.
+
+| Plan | Create | Review | Deliver |
+| --- | --- | --- | --- |
+| Site health, strategy, competitors, Search Console opportunities | Eight focused agents, cited brand knowledge, 30-day plans | Quality checks, split inbox, approval rules, activity history | Calendar, connectors, and white-label offline reports |
 
 ## Quick start
 
@@ -37,7 +41,14 @@ ollama serve
 
 Change `LLM_BASE_URL`, `LLM_API_KEY`, and `LLM_MODEL` in `.env` to use another compatible provider. `LLM_TIMEOUT_MS` controls each individual LLM call and defaults to 300000 (five minutes); a long monthly job is not subject to one global timeout. `LLM_MAX_CONCURRENCY` defaults to 1 so local-model calls are serialized. Project data is stored in `data/opencmo.sqlite`. Markdown publications go to `exports/` by default.
 
-## What v0.6 includes
+## What v0.7 includes
+
+- A paid-product-quality responsive interface with a searchable project sidebar, breadcrumb header, light-first design, polished dark mode, accessible status colors, and consistent controls
+- KPI-led Today dashboard, searchable split-view Inbox, month/week content calendar, safe formatted strategy documents, sectioned settings, and card/table agency views
+- A dependency-free inline SVG icon system, logo, favicon, touch icon, reduced-motion support, loading skeletons, responsive navigation down to 360px, and design-system-aligned print styles
+- Professional local repository documentation, contribution guidance, security reporting instructions, and issue/pull-request templates
+
+All v0.6 reliability features remain available:
 
 - Persistent SQLite-backed background jobs that resume after restart, serialize local-model calls by default, stream live progress through SSE, and support cancel/retry from the header
 - Two-phase monthly plans: four compact weekly outline batches create 30 calendar placeholders, then short per-draft calls fill bodies while the user can already review the plan
@@ -85,7 +96,24 @@ All v0.3 knowledge, policy, observability, safe-fetching, briefing, backup, and 
 
 GEO results are a directional sample from the configured model, not proof of visibility across commercial AI search products. Reddit replies are never posted automatically. The WordPress connector publishes posts immediately only after the corresponding OpenCMO draft has been approved.
 
-## Connector configuration
+## Configuration
+
+Environment values are defaults; the main options can also be saved locally from Settings. Secrets returned to the browser are masked.
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `HOST` | `127.0.0.1` | Bind address; keep local unless you add authentication |
+| `PORT` | `3000` | HTTP port |
+| `DATA_DIR` | `./data` | SQLite database and backups |
+| `LLM_BASE_URL` | `http://localhost:11434/v1` | OpenAI-compatible API base URL |
+| `LLM_API_KEY` | `ollama` | Provider credential |
+| `LLM_MODEL` | `llama3.2` | Chat model |
+| `LLM_TIMEOUT_MS` | `300000` | Timeout for each model call |
+| `LLM_MAX_CONCURRENCY` | `1` | Concurrent model calls |
+| `MARKDOWN_EXPORT_DIR` | `./exports` | Local Markdown publication folder |
+| `ALLOW_PRIVATE_FETCH` | `0` | Opt in to trusted private-network website reads |
+
+### Connector configuration
 
 Markdown export is always available. Optional connectors appear disabled until all required variables are set:
 
@@ -159,15 +187,17 @@ curl -s http://127.0.0.1:3000/api/projects \
 
 ## Architecture
 
-```text
-Browser (vanilla HTML/CSS/JS)
-        │ JSON / SSE
-        ▼
-Hono API ─── persistent job worker ─── agents ─── OpenAI-compatible LLM
-   │            │
-SQLite      website / Reddit research
-   │
-approval state machine ─── scheduler/connector ─── Markdown / WordPress / GitHub / webhook / Telegram / Discord
+```mermaid
+flowchart LR
+  UI[Vanilla browser UI] -->|JSON + SSE| API[Hono API]
+  API --> DB[(SQLite)]
+  API --> Policy[Action policy]
+  API --> Jobs[Persistent job worker]
+  Jobs --> Agents[Marketing agents]
+  Agents --> LLM[OpenAI-compatible LLM]
+  Agents --> Web[Guarded website research]
+  Policy --> Review[Human review inbox]
+  Review -->|explicit approval| Connectors[Publishing connectors]
 ```
 
 The Hono app is assembled in `src/app.ts`; dependencies such as the LLM and `fetch` are injectable. `src/db.ts` owns the SQLite schema and draft state machine. Agent implementations live in `src/agents.ts`, deterministic web analysis in `src/web.ts`, and publisher adapters in `src/connectors.ts`.
@@ -213,6 +243,28 @@ This table describes OpenCMO's design, not an independent feature audit of okara
 - Richer crawl-based SEO audits and analytics integrations
 - More connector-specific previews and publication history
 - Encrypted-at-rest credential storage and multi-user authentication for network deployments
+
+## FAQ
+
+**Does OpenCMO publish automatically?**
+
+No. A draft must pass the code-enforced approval state before it can be scheduled or published. Unfinished background drafts cannot be approved.
+
+**Does my data leave the computer?**
+
+Project data stays in local SQLite. Prompts go to the AI endpoint you configure, site checks contact the public URLs you request, and approved content goes only to the connector you choose.
+
+**Do I need Ollama?**
+
+No. Ollama is the private, local default; OpenAI-compatible hosted providers work too.
+
+**Can I use this for clients?**
+
+Yes. The agency overview, multiple projects, brand knowledge, and offline white-label reports are designed for freelancer and small-agency workflows.
+
+**Is network deployment supported?**
+
+The app is intended for local use and has no built-in user authentication. Add a trusted reverse proxy and authentication before exposing it to a network.
 
 ## Disclaimer
 

@@ -1,6 +1,6 @@
 # Security
 
-Report vulnerabilities privately to the project maintainers rather than opening a public issue. Do not include live credentials or sensitive customer content in a report.
+Report vulnerabilities privately to the project maintainers using the repository host's private security-advisory feature. If that feature is unavailable, contact a maintainer privately rather than opening a public issue. Include the affected version, impact, and minimal reproduction, but do not include live credentials or sensitive customer content. Maintainers will acknowledge a report when received and coordinate disclosure after a fix is available.
 
 OpenCMO binds to `127.0.0.1` by default. Browser-saved provider credentials are stored in the local SQLite database and masked by the settings API, but they are not encrypted at rest; protect the machine and database file accordingly. Publishing always requires an approved draft.
 

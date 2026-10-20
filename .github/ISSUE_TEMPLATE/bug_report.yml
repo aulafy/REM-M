@@ -1,0 +1,29 @@
+name: Bug report
+description: Report reproducible behavior that is not working as intended
+title: "[Bug]: "
+labels: [bug]
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: What happened?
+      description: Include what you expected and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      placeholder: "1. Open…\n2. Select…\n3. See…"
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: OpenCMO and Node versions
+      placeholder: "OpenCMO 0.7.0, Node 22"
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment details
+      description: OS, browser, model/provider, and relevant non-secret configuration. Never include credentials or private customer content.
