@@ -7,6 +7,8 @@ export interface Project {
   description: string;
   audience: string;
   tone: string;
+  language?: 'en' | 'es';
+  competitors?: string[];
   strategy: string | null;
   createdAt: string;
   updatedAt: string;
@@ -21,6 +23,8 @@ export interface Draft {
   title: string;
   body: string;
   metadata: Record<string, unknown>;
+  scheduledAt: string | null;
+  scheduledConnector: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -32,8 +36,31 @@ export interface DraftInput {
   metadata?: Record<string, unknown>;
 }
 
+export interface GeoCheck {
+  question: string;
+  answer: string;
+  brandAppears: boolean;
+  competitors: string[];
+}
+
+export interface GeoHistory {
+  id: string;
+  projectId: string;
+  score: number;
+  visible: number;
+  total: number;
+  checks: GeoCheck[];
+  createdAt: string;
+}
+
 export interface LLM {
   complete(system: string, user: string): Promise<string>;
+}
+
+export interface AgentRunOptions {
+  questionCount?: number;
+  questions?: string[];
+  allowPrivateFetch?: boolean;
 }
 
 export interface AgentDefinition {

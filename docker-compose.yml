@@ -1,0 +1,20 @@
+services:
+  opencmo:
+    build: .
+    ports: ["127.0.0.1:3000:3000"]
+    environment:
+      HOST: 0.0.0.0
+      LLM_BASE_URL: ${LLM_BASE_URL:-http://host.docker.internal:11434/v1}
+      LLM_API_KEY: ${LLM_API_KEY:-ollama}
+      LLM_MODEL: ${LLM_MODEL:-llama3.2}
+    volumes:
+      - ./data:/app/data
+      - ./exports:/app/exports
+    extra_hosts: ["host.docker.internal:host-gateway"]
+  ollama:
+    image: ollama/ollama:latest
+    profiles: ["ollama"]
+    ports: ["127.0.0.1:11434:11434"]
+    volumes: ["ollama:/root/.ollama"]
+volumes:
+  ollama:

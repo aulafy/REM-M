@@ -11,6 +11,9 @@ export interface Config {
   wordpress: { url: string; username: string; password: string };
   github: { token: string; repo: string; branch: string };
   webhook: { url: string; secret: string };
+  telegram: { botToken: string; chatId: string };
+  discord: { webhookUrl: string };
+  allowPrivateFetch: boolean;
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
@@ -35,5 +38,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       branch: env.GITHUB_BRANCH || 'main',
     },
     webhook: { url: env.WEBHOOK_URL || '', secret: env.WEBHOOK_SECRET || '' },
+    telegram: { botToken: env.TELEGRAM_BOT_TOKEN || '', chatId: env.TELEGRAM_CHAT_ID || '' },
+    discord: { webhookUrl: env.DISCORD_WEBHOOK_URL || '' },
+    allowPrivateFetch: env.ALLOW_PRIVATE_FETCH === '1',
   };
 }

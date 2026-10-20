@@ -11,6 +11,7 @@
     <aside>
       <div class="brand"><span>O</span> OpenCMO</div>
       <button id="new-project" class="primary wide">+ New project</button>
+      <button id="open-settings" class="aside-button">⚙ Settings</button>
       <p class="eyebrow">Projects</p>
       <nav id="projects" aria-label="Projects"></nav>
       <p class="local-note">Local-first · approval required</p>
@@ -21,7 +22,7 @@
           <p class="eyebrow">Workspace</p>
           <h1 id="project-title">Welcome to OpenCMO</h1>
         </div>
-        <span id="status" role="status"></span>
+        <div class="header-tools"><select id="workspace-language" hidden aria-label="Project language"><option value="en">English</option><option value="es">Español</option></select><span id="status" role="status"></span></div>
       </header>
 
       <section id="empty" class="empty card">
@@ -35,6 +36,7 @@
           <button class="tab active" data-tab="strategy">Strategy</button>
           <button class="tab" data-tab="agents">Agents</button>
           <button class="tab" data-tab="inbox">Inbox <span id="pending-count" class="count">0</span></button>
+          <button class="tab" data-tab="calendar">Calendar</button>
         </div>
 
         <section id="strategy" class="panel active">
@@ -45,16 +47,25 @@
         <section id="agents" class="panel">
           <div class="panel-heading"><div><h2>Marketing agents</h2><p>Choose an agent, describe the assignment, then review its drafts.</p></div></div>
           <div id="agent-grid" class="agent-grid"></div>
+          <section id="geo-history" class="card geo-history" hidden><h3>GEO visibility trend</h3><div></div></section>
           <form id="run-form" class="card run-box">
             <label for="task">Assignment for <strong id="selected-agent">Writer</strong></label>
             <textarea id="task" placeholder="Example: Write an article about choosing analytics software for a small team" required></textarea>
+            <div id="geo-options" class="two" hidden><label>Number of GEO questions <input id="question-count" type="number" min="1" max="20" value="5"></label><label>Optional questions (one per line)<textarea id="geo-questions" placeholder="Which tools are best for…?"></textarea></label></div>
+            <div id="run-progress" class="progress" hidden><span class="spinner"></span><span></span></div>
             <button class="primary" type="submit">Run agent</button>
           </form>
         </section>
 
         <section id="inbox" class="panel">
           <div class="panel-heading"><div><h2>Draft inbox</h2><p>Edit, approve, reject, and publish. Publishing is disabled until approval.</p></div><select id="draft-filter"><option value="">All statuses</option><option>pending</option><option>approved</option><option>rejected</option><option>published</option></select></div>
+          <div class="bulk"><button id="select-all" class="secondary">Select all</button><button id="bulk-approve" class="secondary">Approve selected</button><button id="bulk-reject" class="danger">Reject selected</button><small>Shortcuts: a approve · r reject · e edit focused draft</small></div>
           <div id="drafts"></div>
+        </section>
+
+        <section id="calendar" class="panel">
+          <div class="panel-heading"><div><h2>Content calendar</h2><p>Approved drafts scheduled for automatic publishing.</p></div></div>
+          <div id="calendar-list"></div>
         </section>
       </div>
     </main>
@@ -67,9 +78,22 @@
       <label>Website URL <input name="url" type="url" placeholder="https://example.com"></label>
       <label>Description <textarea name="description" placeholder="What does the business offer?"></textarea></label>
       <div class="two"><label>Audience <input name="audience" placeholder="Small design teams"></label><label>Tone <input name="tone" placeholder="Clear and practical"></label></div>
+      <div class="two"><label>Language <select name="language" id="project-language"><option value="en">English</option><option value="es">Español</option></select></label><label>Competitors <input name="competitors" placeholder="Competitor A, Competitor B"></label></div>
       <button class="primary wide" type="submit">Create project</button>
     </form>
   </dialog>
+  <dialog id="settings-dialog">
+    <form id="settings-form">
+      <div class="dialog-title"><h2>Settings</h2><button type="button" class="icon" data-close-settings aria-label="Close">×</button></div>
+      <fieldset><legend>LLM</legend><label>Base URL <input name="llmBaseUrl" type="url"></label><div class="two"><label>Model <input name="llmModel"></label><label>API key <input name="llmApiKey" type="password"></label></div><button id="test-llm" type="button" class="secondary">Test LLM connection</button></fieldset>
+      <fieldset><legend>WordPress</legend><label>URL <input name="wordpressUrl" type="url"></label><div class="two"><label>Username <input name="wordpressUsername"></label><label>Application password <input name="wordpressPassword" type="password"></label></div></fieldset>
+      <fieldset><legend>GitHub</legend><label>Token <input name="githubToken" type="password"></label><div class="two"><label>Repository <input name="githubRepo" placeholder="owner/repo"></label><label>Branch <input name="githubBranch"></label></div></fieldset>
+      <fieldset><legend>Webhooks</legend><label>Generic webhook URL <input name="webhookUrl" type="url"></label><label>Webhook secret <input name="webhookSecret" type="password"></label><label>Discord webhook URL <input name="discordWebhookUrl" type="url"></label></fieldset>
+      <fieldset><legend>Telegram</legend><div class="two"><label>Bot token <input name="telegramBotToken" type="password"></label><label>Chat ID <input name="telegramChatId"></label></div></fieldset>
+      <button class="primary wide" type="submit">Save settings</button>
+    </form>
+  </dialog>
+  <div id="toasts" aria-live="polite"></div>
   <script type="module" src="/app.js"></script>
 </body>
 </html>

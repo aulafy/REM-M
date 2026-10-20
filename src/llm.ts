@@ -19,12 +19,17 @@ export class OpenAICompatibleLLM implements LLM {
         signal: AbortSignal.timeout(120_000),
       });
     } catch (error) {
-      throw new AppError(`LLM request failed: ${error instanceof Error ? error.message : String(error)}`, 502);
+      const hint = /localhost|127\.0\.0\.1/.test(this.baseUrl) ? ' Is Ollama running? Start it with "ollama serve" and make sure the configured model is installed.' : '';
+      throw new AppError(`LLM request failed: ${error instanceof Error ? error.message : String(error)}.${hint}`, 502);
     }
     if (!response.ok) throw new AppError(`LLM returned ${response.status}: ${(await response.text()).slice(0, 500)}`, 502);
     const payload = await response.json() as { choices?: Array<{ message?: { content?: string } }> };
     const content = payload.choices?.[0]?.message?.content?.trim();
     if (!content) throw new AppError('LLM returned no content', 502);
     return content;
+  }
+
+  async test(): Promise<string> {
+    return this.complete('Reply with exactly: OK', 'Connection test');
   }
 }

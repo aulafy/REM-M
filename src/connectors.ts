@@ -82,6 +82,38 @@ class WebhookConnector implements Connector {
   }
 }
 
+class TelegramConnector implements Connector {
+  id = 'telegram';
+  name = 'Telegram';
+  configured: boolean;
+  constructor(private options: Config['telegram'], private fetcher: typeof fetch) { this.configured = Boolean(options.botToken && options.chatId); }
+  async publish(draft: Draft): Promise<PublishResult> {
+    if (!this.configured) throw new AppError('Telegram connector is not configured');
+    const response = await this.fetcher(`https://api.telegram.org/bot${this.options.botToken}/sendMessage`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ chat_id: this.options.chatId, text: `${draft.title}\n\n${draft.body}`.slice(0, 4096) }), signal: AbortSignal.timeout(30_000),
+    });
+    const data = await requireOk(response, 'Telegram') as { result?: { message_id?: number } };
+    return { id: data.result?.message_id };
+  }
+}
+
+class DiscordConnector implements Connector {
+  id = 'discord';
+  name = 'Discord';
+  configured: boolean;
+  constructor(private options: Config['discord'], private fetcher: typeof fetch) { this.configured = Boolean(options.webhookUrl); }
+  async publish(draft: Draft): Promise<PublishResult> {
+    if (!this.configured) throw new AppError('Discord connector is not configured');
+    const response = await this.fetcher(`${this.options.webhookUrl}${this.options.webhookUrl.includes('?') ? '&' : '?'}wait=true`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ content: `**${draft.title}**\n\n${draft.body}`.slice(0, 2000), allowed_mentions: { parse: [] } }), signal: AbortSignal.timeout(30_000),
+    });
+    const data = await requireOk(response, 'Discord') as { id?: string };
+    return { id: data.id };
+  }
+}
+
 export function createConnectors(config: Config, fetcher: typeof fetch = fetch): Connector[] {
-  return [new MarkdownConnector(config.markdownExportDir), new WordPressConnector(config.wordpress, fetcher), new GitHubConnector(config.github, fetcher), new WebhookConnector(config.webhook, fetcher)];
+  return [new MarkdownConnector(config.markdownExportDir), new WordPressConnector(config.wordpress, fetcher), new GitHubConnector(config.github, fetcher), new WebhookConnector(config.webhook, fetcher), new TelegramConnector(config.telegram, fetcher), new DiscordConnector(config.discord, fetcher)];
 }

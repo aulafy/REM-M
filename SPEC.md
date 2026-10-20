@@ -37,3 +37,14 @@ Sidebar: projects. Tabs: Strategy · Agents (run with a task box) · Inbox (draf
 
 ## Repo hygiene
 LICENSE (MIT, "OpenCMO contributors"), README (EN, with quickstart, architecture, roadmap, "not affiliated with okara.ai"), .env.example, .gitignore (node_modules, data/, .env), `npm test` with node:test covering SEO audit parser, draft approval state machine (publish before approve must fail), and an LLM stub.
+
+# v0.2 improvements (do all, keep tests green, add tests for new logic)
+1. **Settings UI + API**: configure LLM base URL/model/key and connector credentials from the browser (stored in SQLite `settings`, API keys never returned in full—mask them). "Test LLM connection" button. Env vars remain defaults.
+2. **Streaming**: agent runs and strategy generation stream progress via SSE (`/api/.../run?stream=1`); UI shows live output and a spinner; clear error messages when the LLM is unreachable (with Ollama hint).
+3. **Better GEO**: configurable list of N questions, run each against the LLM, detect brand/competitor mentions with simple fuzzy matching, show a visibility score and per-question table; store history per project so score trends are visible.
+4. **More agents/connectors**: Newsletter agent, Hacker News/Product Hunt launch-post agent; Telegram connector (bot token + chat id) and Discord webhook connector.
+5. **Content calendar**: schedule approved drafts for a date; a lightweight in-process scheduler publishes due drafts (only already-approved ones) every minute; UI calendar/list view.
+6. **UI polish**: dark mode (prefers-color-scheme), draft diff of edits, bulk approve/reject, copy button, keyboard shortcuts (a/r/e in inbox), toast notifications, empty states, mobile layout. Still vanilla JS, no build step.
+7. **i18n**: UI + agent output language selectable per project (en/es at least); default from browser.
+8. **Ops**: Dockerfile + docker-compose.yml (with optional Ollama service), GitHub Actions CI (node 20/22: npm ci, tsc --noEmit, npm test), CONTRIBUTING.md, SECURITY note (SSRF guard: URL fetchers must block private/loopback IPs unless ALLOW_PRIVATE_FETCH=1; add tests), basic rate limit on API, bind to 127.0.0.1 by default.
+9. **README**: add screenshots placeholder section, comparison table vs okara.ai, updated roadmap. Bump to v0.2.0.

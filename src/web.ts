@@ -1,4 +1,6 @@
 import { createRequire } from 'node:module';
+import { lookup } from 'node:dns/promises';
+import { isIP } from 'node:net';
 import { AppError } from './errors.js';
 
 type CheerioModule = { load(html: string): any };
@@ -29,6 +31,33 @@ export function normalizeUrl(raw: string): URL {
     return url;
   } catch {
     throw new AppError('A valid http(s) URL is required');
+  }
+}
+
+export function isPrivateAddress(address: string): boolean {
+  const value = address.toLowerCase().replace(/^::ffff:/, '');
+  if (isIP(value) === 4) {
+    const parts = value.split('.').map(Number);
+    return parts[0] === 10 || parts[0] === 127 || parts[0] === 0 || (parts[0] === 169 && parts[1] === 254)
+      || (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) || (parts[0] === 192 && parts[1] === 168)
+      || (parts[0] === 100 && parts[1] >= 64 && parts[1] <= 127) || parts[0] >= 224;
+  }
+  if (isIP(value) === 6) return value === '::1' || value === '::' || value.startsWith('fc') || value.startsWith('fd') || value.startsWith('fe8') || value.startsWith('fe9') || value.startsWith('fea') || value.startsWith('feb');
+  return false;
+}
+
+export async function assertSafeUrl(url: URL, allowPrivate = process.env.ALLOW_PRIVATE_FETCH === '1'): Promise<void> {
+  if (allowPrivate) return;
+  const hostname = url.hostname.replace(/^\[|\]$/g, '').toLowerCase();
+  if (hostname === 'localhost' || hostname.endsWith('.localhost') || hostname.endsWith('.local') || isPrivateAddress(hostname)) {
+    throw new AppError('Private and loopback URLs are blocked. Set ALLOW_PRIVATE_FETCH=1 only for trusted local targets.', 403);
+  }
+  try {
+    const addresses = await lookup(hostname, { all: true, verbatim: true });
+    if (!addresses.length || addresses.some((result) => isPrivateAddress(result.address))) throw new AppError('URL resolves to a private or loopback address', 403);
+  } catch (error) {
+    if (error instanceof AppError) throw error;
+    throw new AppError(`Could not resolve ${hostname}: ${error instanceof Error ? error.message : String(error)}`, 502);
   }
 }
 
@@ -123,30 +152,42 @@ export function parseSeoHtml(html: string, rawUrl: string): Omit<SeoAudit, 'hasS
   return finishAudit(pageUrl, title, metaDescription, h1, internalLinks, externalLinks, images, missingAlt, canonical, robotsMeta);
 }
 
-async function fetchText(url: URL, fetcher: typeof fetch): Promise<{ text: string; status: number }> {
+async function fetchText(url: URL, fetcher: typeof fetch, allowPrivate = process.env.ALLOW_PRIVATE_FETCH === '1'): Promise<{ text: string; status: number }> {
   try {
-    const response = await fetcher(url, { headers: { 'user-agent': 'OpenCMO/0.1 (+local SEO audit)' }, signal: AbortSignal.timeout(15_000), redirect: 'follow' });
-    return { text: await response.text(), status: response.status };
+    let current = url;
+    for (let redirects = 0; redirects <= 5; redirects += 1) {
+      await assertSafeUrl(current, allowPrivate);
+      const response = await fetcher(current, { headers: { 'user-agent': 'OpenCMO/0.2 (+local SEO audit)' }, signal: AbortSignal.timeout(15_000), redirect: 'manual' });
+      if (response.status >= 300 && response.status < 400 && response.headers.get('location')) {
+        if (redirects === 5) throw new AppError('Too many website redirects', 502);
+        current = new URL(response.headers.get('location')!, current);
+        if (!['http:', 'https:'].includes(current.protocol)) throw new AppError('Website redirected to an unsupported URL', 403);
+        continue;
+      }
+      return { text: await response.text(), status: response.status };
+    }
+    throw new AppError('Too many website redirects', 502);
   } catch (error) {
+    if (error instanceof AppError) throw error;
     throw new AppError(`Could not fetch ${url.href}: ${error instanceof Error ? error.message : String(error)}`, 502);
   }
 }
 
-export async function fetchPage(rawUrl: string, fetcher: typeof fetch = fetch): Promise<{ url: string; html: string; text: string }> {
+export async function fetchPage(rawUrl: string, fetcher: typeof fetch = fetch, allowPrivate = process.env.ALLOW_PRIVATE_FETCH === '1'): Promise<{ url: string; html: string; text: string }> {
   const url = normalizeUrl(rawUrl);
-  const result = await fetchText(url, fetcher);
+  const result = await fetchText(url, fetcher, allowPrivate);
   if (result.status < 200 || result.status >= 300) throw new AppError(`Website returned HTTP ${result.status}`, 502);
   return { url: url.href, html: result.text, text: extractPageText(result.text) };
 }
 
-export async function auditUrl(rawUrl: string, fetcher: typeof fetch = fetch): Promise<SeoAudit> {
+export async function auditUrl(rawUrl: string, fetcher: typeof fetch = fetch, allowPrivate = process.env.ALLOW_PRIVATE_FETCH === '1'): Promise<SeoAudit> {
   const url = normalizeUrl(rawUrl);
-  const page = await fetchText(url, fetcher);
+  const page = await fetchText(url, fetcher, allowPrivate);
   if (page.status < 200 || page.status >= 300) throw new AppError(`Website returned HTTP ${page.status}`, 502);
   const base = parseSeoHtml(page.text, url.href);
   const [robots, sitemap] = await Promise.all([
-    fetchText(new URL('/robots.txt', url), fetcher).catch(() => ({ status: 0, text: '' })),
-    fetchText(new URL('/sitemap.xml', url), fetcher).catch(() => ({ status: 0, text: '' })),
+    fetchText(new URL('/robots.txt', url), fetcher, allowPrivate).catch(() => ({ status: 0, text: '' })),
+    fetchText(new URL('/sitemap.xml', url), fetcher, allowPrivate).catch(() => ({ status: 0, text: '' })),
   ]);
   const hasRobotsTxt = robots.status >= 200 && robots.status < 300;
   const sitemapMentioned = /sitemap\s*:/i.test(robots.text);
