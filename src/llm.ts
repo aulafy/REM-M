@@ -17,7 +17,7 @@ export class OpenAICompatibleLLM implements LLM {
       response = await this.fetcher(`${this.baseUrl}/chat/completions`, {
         method: 'POST',
         headers: { 'content-type': 'application/json', authorization: `Bearer ${this.apiKey}` },
-        body: JSON.stringify({ model: this.model, messages: [{ role: 'system', content: system }, { role: 'user', content: user }], temperature: 0.7 }),
+        body: JSON.stringify({ model: this.model, messages: [{ role: 'system', content: system }, { role: 'user', content: user }], temperature: 0.3, reasoning_effort: process.env.LLM_REASONING_EFFORT || 'none' }),
         signal: AbortSignal.timeout(this.timeoutMs),
       });
     } catch (error) {

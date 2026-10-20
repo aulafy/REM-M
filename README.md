@@ -21,6 +21,8 @@ ollama pull llama3.2
 ollama serve
 ```
 
+**Model quality matters.** In our SEO-audit test on a real site, a 3B model (`llama3.2:3b`) contradicted the measured findings and invented issues, while a 9B model (Qwen 3.5 9B) stuck to the evidence. Use a ~8B+ model for real work. Thinking models are called with `reasoning_effort: none` by default (override with `LLM_REASONING_EFFORT`) so they do not spend minutes reasoning.
+
 Change `LLM_BASE_URL`, `LLM_API_KEY`, and `LLM_MODEL` in `.env` to use another compatible provider. `LLM_TIMEOUT_MS` controls the request timeout and defaults to 300000 (five minutes), which is useful for slower local models; it can also be changed in Settings. Project data is stored in `data/opencmo.sqlite`. Markdown publications go to `exports/` by default.
 
 ## What v0.3 includes
