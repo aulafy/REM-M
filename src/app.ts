@@ -20,6 +20,7 @@ import { dashboardActions, draftQuality, monthPlan, siteHealthFromAudit, starter
 import { auditUrl } from './web.js';
 import { buildClientReport, competitorMetric, findSearchOpportunities, parseGscQueriesCsv, whereCompetitorsBeatYou } from './v05.js';
 import { bodySystemPrompt, completeWithTokens, conciseStrategyPrompt, dedupeOutlineTitles, enforceBodyLimit, jobEstimate, JobWorker, monthBatchSizes, parseOutlineBatch, trimWords } from './jobs.js';
+import { readFileSync } from 'node:fs';
 import type { JobContext } from './jobs.js';
 
 export interface AppDependencies {
@@ -115,6 +116,8 @@ export async function runMaintenance(store: Store, config: Config, fetcher: type
     }
   }
 }
+
+const packageVersion = (() => { try { return String((JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as { version?: string }).version || '0.0.0'); } catch { return '0.0.0'; } })();
 
 export function createApp({ store, llm, config, fetcher = fetch, publicDir = path.resolve('public') }: AppDependencies): Hono {
   const app = new Hono();
@@ -241,7 +244,7 @@ export function createApp({ store, llm, config, fetcher = fetch, publicDir = pat
     await next();
   });
 
-  app.get('/api/health', (c) => c.json({ ok: store.integrityStatus === 'ok', version: '0.7.0', integrity: store.integrityStatus }));
+  app.get('/api/health', (c) => c.json({ ok: store.integrityStatus === 'ok', version: packageVersion, integrity: store.integrityStatus }));
   app.get('/api/settings', (c) => {
     const stored = store.getSettings();
     const extras = Object.fromEntries(settingKeys.filter((key) => !secretSettingKeys.has(key) && stored[key] !== undefined).map((key) => [key, stored[key]]));

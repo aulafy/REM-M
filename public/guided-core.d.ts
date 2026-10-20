@@ -16,3 +16,6 @@ export function formatDuration(seconds: number, lang?: Lang): string;
 export function friendlyError(raw: unknown, lang?: Lang): FriendlyError;
 export function translate(lang: Lang, key: string, vars?: Record<string, string | number>): string;
 export function channelKey(channel: string): string;
+export function plainText(markdown?: string): string;
+export function reviewOrder(a: { channel: string; createdAt?: string }, b: { channel: string; createdAt?: string }): number;
+export function dropDuplicateTitle(title?: string, markdown?: string): string;

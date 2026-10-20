@@ -103,3 +103,4 @@ details { margin-top:8px; font-size:14px; color:var(--muted); } details pre { wh
 .sr { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; }
 [hidden] { display:none !important; }
 .work .ok .dot { background:var(--ok); border-color:var(--ok); }
+.post-text.doc { white-space:normal; } .post-text.doc h4 { margin:0 0 10px; font-size:19px; } .post-text.doc h1,.post-text.doc h2,.post-text.doc h3 { font-size:18px; margin:14px 0 6px; } .post-text.doc p { margin:0 0 10px; } .post-text.doc ul,.post-text.doc ol { padding-left:22px; margin:0 0 10px; }

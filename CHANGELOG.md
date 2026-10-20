@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.8.0
+- Guided mode at `/` for non-technical users: seven-step plan, one highlighted step at a time with why / time / what happens next, plain-language copy (ES/EN), friendly errors, AI-connection helper (local, online with step-by-step key instructions, or demo), one-at-a-time review cards with a realistic preview, plain-text output for social networks and formatted newsletters/blog posts.
+- Full app moved to `/advanced`.
+- Projects can be corrected after onboarding (name, description, audience, tone).
+- Speed estimates ignore cold-start outliers; `/api/health` reports the version from `package.json`.
+- Pilot kit for testing with real non-technical users (`docs/PILOT.md`).
+
 ## 0.7.0
 
 - Added a cohesive visual design system with semantic color, spacing, type, radius, shadow, component, dark-theme, reduced-motion, and print tokens.

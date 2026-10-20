@@ -169,3 +169,29 @@ export function translate(lang, key, vars = {}) {
 }
 
 export function channelKey(channel) { return ['linkedin', 'x', 'blog', 'newsletter'].includes(channel) ? channel : 'other'; }
+
+// Social networks do not render Markdown: strip the symbols so the user sees (and copies) exactly what will be posted.
+export function plainText(markdown = '') {
+  return String(markdown)
+    .replace(/^\s{0,3}#{1,6}\s*/gm, '')
+    .replace(/\*\*([^*\n]+)\*\*/g, '$1').replace(/__([^_\n]+)__/g, '$1')
+    .replace(/(^|[^*])\*([^*\n]+)\*(?!\*)/g, '$1$2')
+    .replace(/`([^`\n]+)`/g, '$1')
+    .replace(/^\s*[-*]\s+/gm, '• ')
+    .replace(/\n{3,}/g, '\n\n').trim();
+}
+
+// Review order: the networks most small businesses start with first, then longer formats.
+const CHANNEL_ORDER = ['linkedin', 'x', 'blog', 'newsletter'];
+export function reviewOrder(a, b) {
+  const rank = (draft) => { const index = CHANNEL_ORDER.indexOf(draft.channel); return index === -1 ? CHANNEL_ORDER.length : index; };
+  return rank(a) - rank(b) || String(a.createdAt).localeCompare(String(b.createdAt));
+}
+
+// Long formats start with their own title line; do not show it twice.
+export function dropDuplicateTitle(title = '', markdown = '') {
+  const lines = String(markdown).split('\n'); const clean = (value) => value.replace(/^[#*\s]+|[*\s]+$/g, '').replace(/^(asunto|subject)\s*:\s*/i, '').trim().toLowerCase();
+  const target = clean(title); let removed = 0;
+  const kept = lines.filter((line, index) => { if (index < 4 && line.trim() && clean(line) === target && removed < 1) { removed += 1; return false; } return true; });
+  return kept.join('\n').replace(/^\s+/, '');
+}

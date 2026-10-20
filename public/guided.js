@@ -1,4 +1,5 @@
-import { computeSteps, charStatus, formatDuration, friendlyError, translate, channelKey, PROVIDERS } from './guided-core.js';
+import { renderMarkdown } from './markdown.js';
+import { plainText, reviewOrder, dropDuplicateTitle, computeSteps, charStatus, formatDuration, friendlyError, translate, channelKey, PROVIDERS } from './guided-core.js';
 
 const store = {
   get(key) { try { return localStorage.getItem(key); } catch { return null; } },
@@ -84,7 +85,7 @@ function stepAi() {
       <div class="row"><button class="btn" data-act="use-local">${esc(tr('btn.useThis'))}</button></div>` : `<p>${esc(tr('ai.local.missing'))}</p><p>${esc(tr('ai.local.step1'))}</p><p>${esc(tr('ai.local.step2'))}</p><code>ollama pull qwen3:8b</code><p>${esc(tr('ai.local.step3'))}</p><p class="hint">${esc(tr('ai.local.needs'))}</p><div class="row"><button class="btn secondary" data-act="check-again">${esc(tr('btn.checkAgain'))}</button></div>`}</div>` : '';
   const onlinePanel = state.aiChoice === 'online' ? `<div class="panel"><label for="provider">${esc(tr('ai.online.provider'))}</label><select id="provider">${Object.entries(PROVIDERS).map(([id, p]) => `<option value="${id}" ${id === state.provider ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select>
       <div class="how"><b>${esc(tr('ai.online.where'))}</b><br>${esc(tr('ai.online.s1', { site: provider.site }))}<br>${esc(tr('ai.online.s2', { section: provider.section }))}<br>${esc(tr('ai.online.s3', { prefix: provider.prefix }))}</div>
-      <label for="api-key">${esc(tr('ai.online.key'))}</label><input id="api-key" type="password" autocomplete="off" placeholder="${esc(provider.prefix)}…" spellcheck="false">
+      <label for="api-key">${esc(tr('ai.online.key'))}</label><input id="api-key" type="password" autocomplete="off" placeholder="${esc(provider.prefix)}…" spellcheck="false" value="${esc(state.apiKey || '')}">
       <div class="row"><button class="btn" data-act="use-online">${esc(tr('btn.test'))}</button></div></div>` : '';
   return `<p>${esc(tr('ai.choose'))} ${helpBtn('h.ai')}</p>
     <div class="cards">
@@ -128,12 +129,12 @@ function mockup(draft) {
   const status = charStatus(draft.quality?.count ?? draft.body.length, draft.quality?.limit, lang);
   const key = channelKey(draft.channel);
   return `<article class="post" aria-label="${esc(draft.title)}"><div class="post-head"><span class="avatar" aria-hidden="true">${initial}</span><div><b>${esc(p?.name || '')}</b><small>${esc(tr('review.where', { channel: tr(`channel.${key}`) }))}</small></div></div>
-    ${key === 'blog' || key === 'newsletter' ? `<div class="post-text"><b>${esc(draft.title)}</b>\n\n${esc(draft.body)}</div>` : `<div class="post-text" id="post-text">${esc(draft.body)}</div>`}
+    ${key === 'blog' || key === 'newsletter' ? `<div class="post-text doc"><h4>${esc(draft.title)}</h4>${renderMarkdown(dropDuplicateTitle(draft.title, draft.body))}</div>` : `<div class="post-text" id="post-text">${esc(plainText(draft.body))}</div>`}
     <div class="post-foot"><span class="${status.ok ? 'good' : 'bad'}">${esc(status.text)}</span><span>${draft.quality?.limit ? `${draft.quality.count}/${draft.quality.limit}` : ''}</span></div></article>`;
 }
 
 function stepReview() {
-  const queue = state.drafts.filter((d) => isWritten(d) && d.status === 'pending');
+  const queue = state.drafts.filter((d) => isWritten(d) && d.status === 'pending').sort(reviewOrder);
   const approved = state.drafts.filter((d) => d.status === 'approved' || d.status === 'published').length;
   if (!queue.length) return `<div class="celebrate"><div class="big-emoji"><svg viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></svg></div><p>${esc(tr('review.empty'))}</p></div>`;
   const idx = Math.min(state.reviewIdx, queue.length - 1); const draft = queue[idx];
@@ -147,7 +148,7 @@ function stepReview() {
 function stepPublish() {
   const list = state.drafts.filter((d) => d.status === 'approved');
   if (!list.length) return `<p>${esc(tr('pub.empty'))}</p>`;
-  return `<p>${esc(tr('pub.title'))} ${helpBtn('h.calendar')}</p><div class="approved-list">${list.map((d) => `<article class="post"><div class="post-text">${esc(d.body.length > 600 ? `${d.body.slice(0, 600)}…` : d.body)}</div><div class="post-foot"><span>${esc(tr(`channel.${channelKey(d.channel)}`))}${d.scheduledAt ? ` · ${esc(new Date(d.scheduledAt).toLocaleString(lang))}` : ''}</span></div><div style="padding:0 16px 16px"><div class="how"><b>${esc(tr('pub.how'))}:</b> ${esc(tr(`how.${channelKey(d.channel)}`))}</div><div class="row"><button class="btn" data-act="copy" data-id="${esc(d.id)}">${esc(tr('btn.copy'))}</button>${d.scheduledAt ? '' : `<button class="btn secondary" data-act="schedule" data-id="${esc(d.id)}">${esc(tr('btn.addCalendar'))}</button>`}</div></div></article>`).join('')}</div>${errorBox('publish')}`;
+  return `<p>${esc(tr('pub.title'))} ${helpBtn('h.calendar')}</p><div class="approved-list">${list.map((d) => `<article class="post"><div class="post-text">${esc((() => { const t = ['linkedin', 'x'].includes(d.channel) ? plainText(d.body) : plainText(dropDuplicateTitle(d.title, d.body)); return t.length > 600 ? `${t.slice(0, 600)}…` : t; })())}</div><div class="post-foot"><span>${esc(tr(`channel.${channelKey(d.channel)}`))}${d.scheduledAt ? ` · ${esc(new Date(d.scheduledAt).toLocaleString(lang))}` : ''}</span></div><div style="padding:0 16px 16px"><div class="how"><b>${esc(tr('pub.how'))}:</b> ${esc(tr(`how.${channelKey(d.channel)}`))}</div><div class="row"><button class="btn" data-act="copy" data-id="${esc(d.id)}">${esc(tr('btn.copy'))}</button>${d.scheduledAt ? '' : `<button class="btn secondary" data-act="schedule" data-id="${esc(d.id)}">${esc(tr('btn.addCalendar'))}</button>`}</div></div></article>`).join('')}</div>${errorBox('publish')}`;
 }
 
 function stepMonth() {
@@ -253,7 +254,7 @@ async function act(target) {
     else if (action === 'approve') { await api(`/api/drafts/${id}/approve`, { method: 'POST', body: '{}' }); const first = state.drafts.every((d) => d.status !== 'approved'); await refreshProjectData(); if (first) toast(tr('done.first')); render(); }
     else if (action === 'discard') { await api(`/api/drafts/${id}/reject`, { method: 'POST', body: '{}' }); await refreshProjectData(); render(); }
     else if (action === 'rewrite') { state.busy[id] = true; render(); try { await api(`/api/drafts/${id}/regenerate`, { method: 'POST', body: JSON.stringify({ feedback: target.dataset.fb }) }); } finally { delete state.busy[id]; } await refreshProjectData(); render(); }
-    else if (action === 'copy') { const d = state.drafts.find((x) => x.id === id); await navigator.clipboard.writeText(d.body); store.set(`ocmo_copied_${state.project.id}`, '1'); target.textContent = tr('btn.copied'); setTimeout(render, 900); }
+    else if (action === 'copy') { const d = state.drafts.find((x) => x.id === id); await navigator.clipboard.writeText(['linkedin', 'x'].includes(d.channel) ? plainText(d.body) : plainText(dropDuplicateTitle(d.title, d.body))); store.set(`ocmo_copied_${state.project.id}`, '1'); target.textContent = tr('btn.copied'); setTimeout(render, 900); }
     else if (action === 'schedule') { const when = new Date(); when.setDate(when.getDate() + 1); when.setHours(9, 0, 0, 0); await api(`/api/drafts/${id}/schedule`, { method: 'POST', body: JSON.stringify({ scheduledAt: when.toISOString() }) }); await refreshProjectData(); toast(tr('step.publish.short')); render(); }
     else if (action === 'make-month') { await api(`/api/projects/${state.project.id}/month-plan`, { method: 'POST', body: '{}' }); await refreshProjectData(); render(); startPolling(); }
     else if (action === 'skip-month') { store.set(`ocmo_month_skip_${state.project.id}`, '1'); render(); }
@@ -268,6 +269,7 @@ function bind() {
     event.preventDefault();
     try { await api(`/api/projects/${state.project.id}`, { method: 'PATCH', body: JSON.stringify({ name: $('#u-name').value, description: $('#u-desc').value, audience: $('#u-aud').value, tone: $('#u-tone').value }) }); state.editing = false; await refreshProjectData(); render(); } catch (error) { fail('understood', error); }
   });
+  $('#api-key')?.addEventListener('input', (event) => { state.apiKey = event.target.value; });
   $('#provider')?.addEventListener('change', (event) => { state.provider = event.target.value; render(); });
   app.querySelectorAll('[data-act]').forEach((el) => {
     el.addEventListener('click', (event) => { event.stopPropagation(); act(el); });

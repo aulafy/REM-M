@@ -8,6 +8,13 @@ OpenCMO gives founders, freelancers, and small agencies one professional workspa
 | --- | --- | --- | --- |
 | Site health, strategy, competitors, Search Console opportunities | Eight focused agents, cited brand knowledge, 30-day plans | Quality checks, split inbox, approval rules, activity history | Calendar, connectors, and white-label offline reports |
 
+
+## Start here (no technical knowledge needed)
+
+Open <http://127.0.0.1:3000>. The home page is a **guided plan** with seven steps (connect the AI → tell us about your business → check what we understood → first texts → review and approve → publish or copy → plan your month). Only one step is highlighted at a time, each says why it matters, how long it takes and what happens next, and nothing is published without your OK. English/Spanish switch in the top bar. Everything technical (connectors, rules, backups, model settings) lives in **Advanced mode** at `/advanced`.
+
+Want to check it with real people before relying on it? Use the pilot kit in [`docs/PILOT.md`](docs/PILOT.md).
+
 ## Quick start
 
 With Docker:

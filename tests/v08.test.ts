@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { computeSteps, STEP_IDS, T, BANNED_IN_SIMPLE, ENGINE_COPY_KEYS, friendlyError, charStatus, formatDuration, translate, PROVIDERS, channelKey } from '../public/guided-core.js';
+import { computeSteps, STEP_IDS, T, BANNED_IN_SIMPLE, ENGINE_COPY_KEYS, friendlyError, charStatus, formatDuration, translate, PROVIDERS, channelKey, plainText, reviewOrder, dropDuplicateTitle } from '../public/guided-core.js';
 
 const base = { aiOk: false, project: null, understood: false, draftsWithBody: 0, approvedCount: 0, publishedOrScheduled: false, copied: false, monthPlanStarted: false, monthSkipped: false };
 
@@ -93,4 +93,25 @@ test('projects can be corrected by the user after onboarding', async () => {
   const created = await (await app.request('/api/projects', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: 'Tienda', url: 'https://tienda.example', language: 'es' }) })).json() as { project: { id: string } };
   const patched = await (await app.request(`/api/projects/${created.project.id}`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: 'Mi tienda', description: 'Vendo velas', audience: 'Regalos', tone: 'Cercano' }) })).json() as { project: { name: string; description: string; audience: string; tone: string; language: string } };
   assert.deepEqual([patched.project.name, patched.project.description, patched.project.audience, patched.project.tone, patched.project.language], ['Mi tienda', 'Vendo velas', 'Regalos', 'Cercano', 'es']);
+});
+
+test('social posts lose Markdown symbols, long formats lose their duplicated title, and review order starts with LinkedIn', () => {
+  assert.equal(plainText('# Título\n\nHola **mundo** y *tú*.\n- uno\n- dos'), 'Título\n\nHola mundo y tú.\n• uno\n• dos');
+  assert.doesNotMatch(plainText('## A\n**B** `c`'), /[#*`]/);
+  const body = '**Asunto: Ilumina tu hogar**\n\n# Asunto: Ilumina tu hogar\n## Previsualización: algo\n\nHola,';
+  const cleaned = dropDuplicateTitle('Asunto: Ilumina tu hogar', body);
+  assert.ok(!/^\*\*Asunto/.test(cleaned), 'first duplicated title line is dropped');
+  assert.ok((cleaned.match(/Ilumina tu hogar/g) || []).length <= 1, 'title appears at most once more');
+  assert.equal(dropDuplicateTitle('Otro', 'Texto normal'), 'Texto normal');
+  const sorted = [{ channel: 'newsletter', createdAt: '1' }, { channel: 'x', createdAt: '2' }, { channel: 'linkedin', createdAt: '3' }, { channel: 'blog', createdAt: '4' }].sort(reviewOrder);
+  assert.deepEqual(sorted.map((d) => d.channel), ['linkedin', 'x', 'blog', 'newsletter']);
+});
+
+test('health endpoint reports the version from package.json', async () => {
+  const { createApp } = await import('../src/app.js'); const { loadConfig } = await import('../src/config.js'); const { Store } = await import('../src/db.js');
+  const os = await import('node:os'); const path = await import('node:path');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'opencmo-v08c-'));
+  const app = createApp({ config: loadConfig({ DATA_DIR: dir, MARKDOWN_EXPORT_DIR: path.join(dir, 'exports') }), store: new Store(path.join(dir, 'x.sqlite')) });
+  const health = await (await app.request('/api/health')).json() as { version: string };
+  assert.equal(health.version, (JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as { version: string }).version);
 });
