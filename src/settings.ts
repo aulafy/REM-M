@@ -8,6 +8,7 @@ export const settingKeys = [
   'telegramBotToken', 'telegramChatId', 'discordWebhookUrl',
   'llmMaxPerHour', 'llm_max_per_hour', 'ragEmbeddings', 'embeddingModel', 'briefsEnabled', 'morningBriefTime', 'eveningBriefTime', 'briefTelegram',
   'hindsightEnabled', 'hindsightUrl',
+  'markdownExportDir', 'uiLanguage', 'onboardingComplete',
 ] as const;
 
 export const secretSettingKeys = new Set<string>(['llmApiKey', 'wordpressPassword', 'githubToken', 'webhookSecret', 'telegramBotToken']);
@@ -34,6 +35,7 @@ export function effectiveConfig(defaults: Config, settings: Record<string, strin
     webhook: { url: value('webhookUrl', defaults.webhook.url), secret: value('webhookSecret', defaults.webhook.secret) },
     telegram: { botToken: value('telegramBotToken', defaults.telegram.botToken), chatId: value('telegramChatId', defaults.telegram.chatId) },
     discord: { webhookUrl: value('discordWebhookUrl', defaults.discord.webhookUrl) },
+    markdownExportDir: value('markdownExportDir', defaults.markdownExportDir),
   };
 }
 
@@ -44,6 +46,7 @@ export function publicSettings(config: Config): Record<string, string> {
     githubToken: config.github.token, githubRepo: config.github.repo, githubBranch: config.github.branch,
     webhookUrl: config.webhook.url, webhookSecret: config.webhook.secret,
     telegramBotToken: config.telegram.botToken, telegramChatId: config.telegram.chatId, discordWebhookUrl: config.discord.webhookUrl,
+    markdownExportDir: config.markdownExportDir,
   };
   for (const key of secretSettingKeys) values[key] = values[key] ? (values[key].length <= 4 ? '••••' : `••••${values[key].slice(-4)}`) : '';
   return values;

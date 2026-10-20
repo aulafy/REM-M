@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.4.0
+
+- Added the resumable first-run wizard with Ollama detection, cloud presets, connection testing, deterministic site health, strategy generation, knowledge import, and five starter drafts.
+- Added the per-project Today dashboard and 30-day multi-channel content planner.
+- Added source visibility, channel-limit enforcement, live counters, AI-cliché flags, one-click rewrite, feedback-based regeneration, and reject undo.
+- Added normalized-URL deduplication with merge, complete English/Spanish product navigation, friendly recovery actions, loading skeletons, shortcut help, focus styles, and mobile refinements.
+- Added a removable, fully canned demo business that works without an LLM.
+- Split Settings into Basic and Advanced sections and made the Markdown export folder configurable in the UI.
+
 ## 0.3.0
 
 - Added per-project knowledge documents, chunking, Spanish-aware BM25, optional embedding/RRF retrieval, citations, and the Knowledge UI.

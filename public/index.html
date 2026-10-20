@@ -7,41 +7,69 @@
   <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
+  <section id="wizard" class="wizard" hidden aria-labelledby="wizard-title">
+    <div class="wizard-card">
+      <div class="wizard-top"><div class="brand dark"><span>O</span> OpenCMO</div><button id="skip-wizard" class="secondary" data-i18n="skip">Skip for now</button></div>
+      <div class="steps" aria-label="Setup progress"><span class="active">1</span><i></i><span>2</span><i></i><span>3</span></div>
+      <section class="wizard-step active" data-step="1">
+        <p class="eyebrow" data-i18n="setupMinute">SETUP · ABOUT 3 MINUTES</p><h1 id="wizard-title" data-i18n="chooseAi">Choose your AI engine</h1><p data-i18n="chooseAiHelp">Your data stays on this computer unless you choose a cloud provider.</p>
+        <div id="engine-options" class="engine-options skeleton"><p data-i18n="lookingOllama">Looking for Ollama…</p></div>
+        <div id="cloud-engine" class="card engine-config" hidden><label><span data-i18n="provider">Provider</span><select id="engine-preset"><option value="openrouter">OpenRouter</option><option value="openai">OpenAI</option><option value="anthropic">Anthropic gateway</option><option value="groq">Groq</option><option value="gemini">Gemini</option></select></label><label><span data-i18n="baseUrl">Base URL</span><input id="wizard-base-url" type="url"></label><label><span data-i18n="model">Model</span><input id="wizard-model"></label><label><span data-i18n="apiKey">API key</span><input id="wizard-api-key" type="password"></label></div>
+        <p id="model-warning" class="warning" hidden data-i18n="smallWarning">Small models give unreliable advice. Choose a 7B+ model for real work.</p>
+        <div class="wizard-actions"><button id="try-demo" class="secondary" data-i18n="trySample">Try with a sample business</button><span></span><button id="test-engine" class="secondary" data-i18n="test">Test</button><button id="wizard-next-1" class="primary" data-i18n="continue">Continue</button></div>
+      </section>
+      <section class="wizard-step" data-step="2">
+        <p class="eyebrow" data-i18n="businessStep">YOUR BUSINESS</p><h1 data-i18n="meetBusiness">Let OpenCMO meet your business</h1><p data-i18n="meetBusinessHelp">We’ll read the public site and show you what we found before saving.</p>
+        <form id="wizard-site-form" class="wizard-form"><label><span data-i18n="websiteUrl">Website URL</span><input name="url" type="url" required placeholder="https://example.com"></label><label><span data-i18n="language">Language</span><select name="language"><option value="en">English</option><option value="es">Español</option></select></label><button class="primary" data-i18n="readSite">Read my site</button></form>
+        <form id="wizard-profile" class="wizard-form card" hidden><label><span data-i18n="businessName">Business name</span><input name="name" required></label><label><span data-i18n="description">Description</span><textarea name="description"></textarea></label><div class="two"><label><span data-i18n="audience">Audience</span><input name="audience"></label><label><span data-i18n="tone">Tone</span><input name="tone"></label></div><div class="wizard-actions"><button type="button" id="wizard-back-2" class="secondary" data-i18n="back">Back</button><span></span><button class="primary" data-i18n="analyze">Analyze my business</button></div></form>
+      </section>
+      <section class="wizard-step" data-step="3">
+        <p class="eyebrow" data-i18n="analysisStep">YOUR FIRST PLAN</p><h1 data-i18n="analyzing">Analyzing your site…</h1><p data-i18n="analyzingHelp">You can watch the work happen. Nothing will be published.</p>
+        <div id="wizard-progress" class="analysis-progress"><div data-progress="health"><span>1</span><div><strong data-i18n="siteHealth">Site health report</strong><small data-i18n="waiting">Waiting…</small></div></div><div data-progress="strategy"><span>2</span><div><strong data-i18n="strategy">Strategy</strong><small data-i18n="waiting">Waiting…</small></div></div><div data-progress="drafts"><span>3</span><div><strong data-i18n="starterDrafts">5 starter drafts</strong><small data-i18n="waiting">Waiting…</small></div></div></div>
+      </section>
+    </div>
+  </section>
   <div class="shell">
     <aside>
       <div class="brand"><span>O</span> OpenCMO</div>
-      <button id="new-project" class="primary wide">+ New project</button>
-      <button id="open-settings" class="aside-button">⚙ Settings</button>
-      <p class="eyebrow">Projects</p>
+      <button id="new-project" class="primary wide" data-i18n="newProject">+ New project</button>
+      <button id="open-settings" class="aside-button" data-i18n="settingsButton">⚙ Settings</button>
+      <p class="eyebrow" data-i18n="projects">Projects</p>
       <nav id="projects" aria-label="Projects"></nav>
-      <p class="local-note">Local-first · approval required</p>
+      <p class="local-note" data-i18n="localNote">Local-first · approval required</p>
     </aside>
     <main>
       <header>
         <div>
-          <p class="eyebrow">Workspace</p>
+          <p class="eyebrow" data-i18n="workspace">Workspace</p>
           <h1 id="project-title">Welcome to OpenCMO</h1>
         </div>
-        <div class="header-tools"><select id="workspace-language" hidden aria-label="Project language"><option value="en">English</option><option value="es">Español</option></select><span id="status" role="status"></span></div>
+        <div class="header-tools"><span id="demo-badge" class="demo-badge" hidden>DEMO</span><button id="delete-demo" class="danger" hidden data-i18n="deleteDemo">Delete demo</button><button id="shortcut-help" class="icon-help" aria-label="Keyboard shortcuts">?</button><select id="workspace-language" hidden aria-label="Project language"><option value="en">English</option><option value="es">Español</option></select><span id="status" role="status"></span></div>
       </header>
 
       <section id="empty" class="empty card">
-        <h2>Create your first marketing workspace</h2>
-        <p>Add a business and its URL. OpenCMO can research its site, build a strategy, and draft work for your approval.</p>
-        <button class="primary" data-open-project>Create project</button>
+        <h2 data-i18n="emptyTitle">Create your first marketing workspace</h2>
+        <p data-i18n="emptyHelp">Add a business and its URL. OpenCMO can research its site, build a strategy, and draft work for your approval.</p>
+        <button class="primary" data-open-project data-i18n="createProject">Create project</button> <button class="secondary" data-demo data-i18n="trySample">Try with a sample business</button>
       </section>
 
       <div id="workspace" hidden>
         <div class="tabs" role="tablist">
-          <button class="tab active" data-tab="strategy">Strategy</button>
-          <button class="tab" data-tab="knowledge">Knowledge</button>
-          <button class="tab" data-tab="agents">Agents</button>
-          <button class="tab" data-tab="inbox">Inbox <span id="pending-count" class="count">0</span></button>
-          <button class="tab" data-tab="calendar">Calendar</button>
-          <button class="tab" data-tab="policy">Policy</button>
+          <button class="tab active" data-tab="today" data-i18n="today">Today</button>
+          <button class="tab" data-tab="strategy" data-i18n="strategy">Strategy</button>
+          <button class="tab" data-tab="knowledge" data-i18n="knowledge">Knowledge</button>
+          <button class="tab" data-tab="agents" data-i18n="agents">Agents</button>
+          <button class="tab" data-tab="inbox"><span data-i18n="inbox">Inbox</span> <span id="pending-count" class="count">0</span></button>
+          <button class="tab" data-tab="calendar" data-i18n="calendar">Calendar</button>
+          <button class="tab" data-tab="policy" data-i18n="rules">Rules</button>
         </div>
 
-        <section id="strategy" class="panel active">
+        <section id="today" class="panel active">
+          <div class="panel-heading"><div><h2 data-i18n="todayTitle">Today</h2><p data-i18n="todayHelp">A short, practical view of what moves your marketing forward.</p></div><button id="generate-month" class="primary" data-i18n="generateMonth">Generate my month</button></div>
+          <div id="today-dashboard" class="dashboard skeleton"><div class="card"></div><div class="card"></div><div class="card"></div></div>
+        </section>
+
+        <section id="strategy" class="panel">
           <div class="panel-heading"><div><h2>Marketing strategy</h2><p>Grounded in your website and business details.</p></div><button id="generate-strategy" class="primary">Generate strategy</button></div>
           <article id="strategy-content" class="card prose muted">No strategy yet. Generate one after configuring your local LLM.</article>
         </section>
@@ -102,7 +130,9 @@
   <dialog id="settings-dialog">
     <form id="settings-form">
       <div class="dialog-title"><h2>Settings</h2><button type="button" class="icon" data-close-settings aria-label="Close">×</button></div>
-      <fieldset><legend>LLM</legend><label>Base URL <input name="llmBaseUrl" type="url"></label><div class="two"><label>Model <input name="llmModel"></label><label>API key <input name="llmApiKey" type="password"></label></div><div class="two"><label>Request timeout (milliseconds) <input name="llmTimeoutMs" type="number" min="1" step="1000"></label><label>Maximum calls/hour <input name="llmMaxPerHour" type="number" min="1" value="60"></label></div><label><input class="inline-check" name="ragEmbeddings" type="checkbox" value="1"> Fuse optional embeddings with BM25</label><label>Embedding model <input name="embeddingModel" placeholder="nomic-embed-text"></label><div id="llm-stats" class="stats"></div><button id="test-llm" type="button" class="secondary">Test LLM connection</button></fieldset>
+      <fieldset><legend data-i18n="basic">Basic</legend><label><span data-i18n="aiEngine">AI engine URL</span><input name="llmBaseUrl" type="url"></label><div class="two"><label><span data-i18n="model">Model</span><input name="llmModel"></label><label><span data-i18n="apiKey">API key</span><input name="llmApiKey" type="password"></label></div><label><span data-i18n="language">Language</span><select name="uiLanguage"><option value="en">English</option><option value="es">Español</option></select></label><label><span data-i18n="exportFolder">Export folder</span><input name="markdownExportDir"></label><button id="test-llm" type="button" class="secondary" data-i18n="testConnection">Test AI connection</button><button id="restart-wizard" type="button" class="secondary" data-i18n="restartWizard">Run setup wizard again</button></fieldset>
+      <details class="advanced-settings"><summary data-i18n="advanced">Advanced</summary>
+      <fieldset><legend data-i18n="aiLimits">AI limits & retrieval</legend><div class="two"><label>Request timeout (milliseconds) <input name="llmTimeoutMs" type="number" min="1" step="1000"></label><label>Maximum calls/hour <input name="llmMaxPerHour" type="number" min="1" value="60"></label></div><label><input class="inline-check" name="ragEmbeddings" type="checkbox" value="1"> Fuse optional embeddings with BM25</label><label>Embedding model <input name="embeddingModel" placeholder="nomic-embed-text"></label><div id="llm-stats" class="stats"></div></fieldset>
       <fieldset><legend>Daily briefs</legend><label><input class="inline-check" name="briefsEnabled" type="checkbox" value="1" checked> Enable morning/evening briefs</label><label><input class="inline-check" name="briefTelegram" type="checkbox" value="1"> Notify configured Telegram chat</label><div class="two"><label>Morning time <input name="morningBriefTime" type="time" value="08:00"></label><label>Evening time <input name="eveningBriefTime" type="time" value="18:00"></label></div></fieldset>
       <fieldset><legend>Long-term memory (optional)</legend><label><input class="inline-check" name="hindsightEnabled" type="checkbox" value="1"> Enable Hindsight</label><label>Local Hindsight URL <input name="hindsightUrl" type="url" value="http://127.0.0.1:8888"></label></fieldset>
       <fieldset><legend>WordPress</legend><label>URL <input name="wordpressUrl" type="url"></label><div class="two"><label>Username <input name="wordpressUsername"></label><label>Application password <input name="wordpressPassword" type="password"></label></div></fieldset>
@@ -110,10 +140,12 @@
       <fieldset><legend>Webhooks</legend><label>Generic webhook URL <input name="webhookUrl" type="url"></label><label>Webhook secret <input name="webhookSecret" type="password"></label><label>Discord webhook URL <input name="discordWebhookUrl" type="url"></label></fieldset>
       <fieldset><legend>Telegram</legend><div class="two"><label>Bot token <input name="telegramBotToken" type="password"></label><label>Chat ID <input name="telegramChatId"></label></div></fieldset>
       <fieldset><legend>Backups & integrity</legend><p id="integrity-status"></p><div id="backup-list"></div><button id="create-backup" type="button" class="secondary">Create backup now</button></fieldset>
+      </details>
       <button class="primary wide" type="submit">Save settings</button>
     </form>
   </dialog>
+  <dialog id="shortcut-dialog"><div class="shortcut-box"><div class="dialog-title"><h2 data-i18n="shortcuts">Keyboard shortcuts</h2><button type="button" class="icon" data-close-shortcuts aria-label="Close">×</button></div><p><kbd>?</kbd> <span data-i18n="showHelp">Show this help</span></p><p><kbd>A</kbd> <span data-i18n="approveFocused">Approve focused draft</span></p><p><kbd>R</kbd> <span data-i18n="rejectFocused">Reject focused draft</span></p><p><kbd>E</kbd> <span data-i18n="editFocused">Edit focused draft</span></p></div></dialog>
   <div id="toasts" aria-live="polite"></div>
-  <script type="module" src="/app.js"></script>
+  <script type="module" src="/app-v04.js"></script>
 </body>
 </html>

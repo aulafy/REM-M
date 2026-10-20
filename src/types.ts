@@ -10,8 +10,17 @@ export interface Project {
   language?: 'en' | 'es';
   competitors?: string[];
   strategy: string | null;
+  isDemo?: boolean;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface HealthHistory {
+  id: string;
+  projectId: string;
+  score: number;
+  report: Record<string, unknown>;
+  createdAt: string;
 }
 
 export interface Draft {

@@ -16,6 +16,8 @@ import { ActionRunner, actionFloor, defaultPolicy } from './policy.js';
 import { BackupManager } from './backups.js';
 import { HindsightMemory } from './hindsight.js';
 import { briefIsDue, buildBrief } from './briefs.js';
+import { dashboardActions, draftQuality, monthPlan, siteHealthFromAudit, starterDrafts } from './product.js';
+import { auditUrl } from './web.js';
 
 export interface AppDependencies {
   store: Store;
@@ -34,6 +36,11 @@ async function jsonBody(c: { req: { json: <T>() => Promise<T> } }): Promise<Reco
 }
 
 function textField(value: unknown): string | undefined { return typeof value === 'string' ? value : undefined; }
+
+function modelIsSmall(value: string): boolean {
+  const matches = [...value.toUpperCase().matchAll(/(?:^|[:_-]|\b)(\d+(?:\.\d+)?)\s*B\b/g)];
+  return matches.some((match) => Number(match[1]) < 7);
+}
 
 function sse(operation: (send: (event: string, data: unknown) => void) => Promise<void>): Response {
   const encoder = new TextEncoder();
@@ -116,7 +123,7 @@ export function createApp({ store, llm, config, fetcher = fetch, publicDir = pat
   app.onError((error, c) => {
     const status = error instanceof AppError ? error.status : 500;
     if (!(error instanceof AppError)) console.error(error);
-    return c.json({ error: error.message || 'Internal server error' }, status as 400);
+    return c.json({ error: error.message || 'Internal server error', ...(error instanceof AppError && error.details ? error.details : {}) }, status as 400);
   });
   app.use('/api/*', async (c, next) => {
     const key = c.req.header('x-forwarded-for')?.split(',')[0]?.trim() || 'local';
@@ -129,7 +136,7 @@ export function createApp({ store, llm, config, fetcher = fetch, publicDir = pat
     await next();
   });
 
-  app.get('/api/health', (c) => c.json({ ok: store.integrityStatus === 'ok', version: '0.3.0', integrity: store.integrityStatus }));
+  app.get('/api/health', (c) => c.json({ ok: store.integrityStatus === 'ok', version: '0.4.0', integrity: store.integrityStatus }));
   app.get('/api/settings', (c) => {
     const stored = store.getSettings();
     const extras = Object.fromEntries(settingKeys.filter((key) => !secretSettingKeys.has(key) && stored[key] !== undefined).map((key) => [key, stored[key]]));
@@ -147,8 +154,29 @@ export function createApp({ store, llm, config, fetcher = fetch, publicDir = pat
     return c.json({ settings: { ...publicSettings(currentConfig()), ...updates } });
   });
   app.post('/api/settings/test-llm', async (c) => {
-    const result = await currentLLM('connection-test').complete('Reply with exactly OK.', 'Connection test');
+    const body = await jsonBody(c);
+    const active = currentConfig();
+    const baseUrl = textField(body.llmBaseUrl)?.replace(/\/$/, '') || active.llmBaseUrl;
+    const model = textField(body.llmModel) || active.llmModel;
+    const key = textField(body.llmApiKey);
+    const apiKey = key && !key.startsWith('••••') ? key : active.llmApiKey;
+    const candidate = new ObservedLLM(llm && !body.llmBaseUrl && !body.llmModel && !body.llmApiKey ? llm : new OpenAICompatibleLLM(baseUrl, apiKey, model, fetcher, active.llmTimeoutMs), store, 'connection-test', model);
+    const result = await candidate.complete('Reply with exactly OK.', 'Connection test');
     return c.json({ ok: true, response: result.slice(0, 100) });
+  });
+  app.get('/api/engines/ollama', async (c) => {
+    const active = currentConfig();
+    const candidates = [...new Set([active.llmBaseUrl.replace(/\/v1\/?$/, ''), 'http://127.0.0.1:11434'])];
+    for (const base of candidates) {
+      try {
+        const response = await fetcher(`${base}/api/tags`, { signal: AbortSignal.timeout(2_500) });
+        if (!response.ok) continue;
+        const payload = await response.json() as { models?: Array<{ name?: string; size?: number; details?: { parameter_size?: string } }> };
+        const models = (payload.models || []).map((item) => ({ name: String(item.name || ''), size: Number(item.size || 0), parameterSize: String(item.details?.parameter_size || ''), small: modelIsSmall(String(item.details?.parameter_size || item.name || '')) })).filter((item) => item.name);
+        return c.json({ available: true, baseUrl: `${base}/v1`, models });
+      } catch { /* try the next local endpoint */ }
+    }
+    return c.json({ available: false, baseUrl: 'http://127.0.0.1:11434/v1', models: [] });
   });
   app.post('/api/onboarding/profile', async (c) => {
     const body = await jsonBody(c); const url = textField(body.url); if (!url) throw new AppError('url is required');
@@ -164,6 +192,7 @@ export function createApp({ store, llm, config, fetcher = fetch, publicDir = pat
   });
 
   app.get('/api/projects', (c) => c.json({ projects: store.listProjects() }));
+  app.get('/api/projects/check-url', (c) => c.json({ project: store.findProjectByUrl(c.req.query('url') || '') || null }));
   app.post('/api/projects', async (c) => {
     const body = await jsonBody(c);
     const language = textField(body.language);
@@ -174,10 +203,16 @@ export function createApp({ store, llm, config, fetcher = fetch, publicDir = pat
     });
     return c.json({ project }, 201);
   });
+  app.delete('/api/projects/:id', (c) => { store.deleteDemoProject(c.req.param('id')); return c.json({ ok: true }); });
   app.patch('/api/projects/:id', async (c) => {
     const body = await jsonBody(c);
     const competitors = Array.isArray(body.competitors) ? body.competitors.map(String) : textField(body.competitors)?.split(',');
     return c.json({ project: store.updateProject(c.req.param('id'), { language: textField(body.language), competitors }) });
+  });
+  app.post('/api/projects/:id/merge', async (c) => {
+    const body = await jsonBody(c);
+    const language = textField(body.language);
+    return c.json({ project: store.mergeProject(c.req.param('id'), { name: textField(body.name), description: textField(body.description), audience: textField(body.audience), tone: textField(body.tone), language: language === 'es' ? 'es' : language === 'en' ? 'en' : undefined, competitors: textField(body.competitors)?.split(',') }) });
   });
 
   app.post('/api/projects/:id/strategy', async (c) => {
@@ -219,6 +254,7 @@ export function createApp({ store, llm, config, fetcher = fetch, publicDir = pat
       send?.('progress', { message: 'Saving drafts…' });
       const drafts: Draft[] = [];
       for (const output of outputs) {
+        output.metadata = { ...output.metadata, sources: chunks.map((chunk, index) => ({ label: `K${index + 1}`, title: chunk.title, chunkId: chunk.id, documentId: chunk.documentId })) };
         const outcome = await actions.runAction({ actor: c.req.param('agent'), action: 'create_draft', params: { projectId: project.id, agentId: c.req.param('agent'), output }, summary: `Create draft: ${output.title}`, apply: () => store.createDraft(project.id, c.req.param('agent'), output) });
         if (outcome.result) drafts.push(outcome.result);
       }
@@ -235,6 +271,64 @@ export function createApp({ store, llm, config, fetcher = fetch, publicDir = pat
     return c.json({ drafts: await execute() }, 201);
   });
   app.get('/api/projects/:id/geo-history', (c) => c.json({ history: store.listGeoHistory(c.req.param('id')) }));
+  app.post('/api/projects/:id/health', async (c) => {
+    const project = store.getProject(c.req.param('id')); if (!project.url) throw new AppError('Project URL is required');
+    const report = siteHealthFromAudit(await auditUrl(project.url, fetcher, config.allowPrivateFetch));
+    return c.json({ health: store.addHealthHistory(project.id, report.score, report as unknown as Record<string, unknown>) }, 201);
+  });
+  app.get('/api/projects/:id/dashboard', (c) => {
+    const project = store.getProject(c.req.param('id')); const drafts = store.listDrafts(project.id); const health = store.listHealthHistory(project.id); const geo = store.listGeoHistory(project.id);
+    const latest = health.at(-1) || null; const previous = health.at(-2) || null;
+    const weekEnd = Date.now() + 7 * 86_400_000;
+    const schedule = drafts.filter((draft) => { const date = draft.scheduledAt || String(draft.metadata.plannedAt || ''); return date && Date.parse(date) <= weekEnd && Date.parse(date) >= Date.now() - 86_400_000; }).sort((a, b) => String(a.scheduledAt || a.metadata.plannedAt).localeCompare(String(b.scheduledAt || b.metadata.plannedAt))).slice(0, 7);
+    const lastBrief = drafts.find((draft) => draft.agentId.endsWith('-brief')) || null;
+    return c.json({ health: latest ? { ...latest, trend: previous ? latest.score - previous.score : 0 } : null, pending: drafts.filter((draft) => draft.status === 'pending').length, schedule, lastBrief, actions: dashboardActions(project, drafts, geo.map((item) => item.createdAt), project.language === 'es' ? 'es' : 'en') });
+  });
+
+  app.post('/api/demo', (c) => {
+    const es = (c.req.query('language') || 'en') === 'es';
+    const project = store.createProject({ name: 'Luna Studio', description: es ? 'Estudio ficticio de diseño web sostenible para pequeños negocios.' : 'A fictional sustainable web design studio for small businesses.', audience: es ? 'Fundadores y comercios locales' : 'Founders and local businesses', tone: es ? 'Cálido, claro y práctico' : 'Warm, clear, and practical', language: es ? 'es' : 'en', isDemo: true, strategy: es ? '# Posicionamiento\nDiseño web sostenible y claro para pequeños negocios.\n\n# Cliente ideal\nFundadores que necesitan una web eficaz sin un proceso complejo.\n\n# Canales\nLinkedIn, newsletter y contenido educativo.' : '# Positioning\nClear, sustainable web design for small businesses.\n\n# Ideal customer\nFounders who need an effective website without a complex process.\n\n# Channels\nLinkedIn, newsletter, and educational content.' });
+    const examples = starterDrafts(project, '');
+    examples.forEach((input, index) => store.createDraft(project.id, 'demo', { ...input, metadata: { ...input.metadata, plannedAt: new Date(Date.now() + index * 86_400_000).toISOString(), demo: true } }));
+    store.addGeoHistory(project.id, 2, 5, []); store.addGeoHistory(project.id, 3, 5, []);
+    store.addHealthHistory(project.id, 78, { issues: es ? ['Falta una descripción meta en una página'] : ['One page is missing a meta description'], demo: true });
+    store.addKnowledgeDocument(project.id, es ? 'Guía de marca' : 'Brand guide', 'demo', [{ text: project.description }]);
+    return c.json({ project }, 201);
+  });
+
+  app.post('/api/onboarding/run', async (c) => {
+    const body = await jsonBody(c);
+    const execute = async (send?: (event: string, data: unknown) => void) => {
+      const url = textField(body.url); if (!url) throw new AppError('url is required');
+      const existing = store.findProjectByUrl(url); if (existing) throw new AppError('A project for this website already exists', 409, { code: 'duplicate_project', project: existing });
+      const language = textField(body.language) === 'es' ? 'es' : 'en';
+      const supplied = body.profile && typeof body.profile === 'object' ? body.profile as Record<string, unknown> : {};
+      send?.('progress', { step: 'health', message: language === 'es' ? 'Comprobando la salud del sitio…' : 'Checking site health…' });
+      const [page, audit] = await Promise.all([fetchPage(url, fetcher, config.allowPrivateFetch), auditUrl(url, fetcher, config.allowPrivateFetch)]);
+      const extracted = extractWebsiteProfile(page.html, page.url);
+      const profile = { ...extracted, ...Object.fromEntries(['name', 'description', 'audience', 'tone'].flatMap((key) => typeof supplied[key] === 'string' && supplied[key] ? [[key, supplied[key]]] : [])) };
+      const health = siteHealthFromAudit(audit);
+      const provisional = { id: '', name: profile.name, url: page.url, description: profile.description, audience: profile.audience, tone: profile.tone, language, competitors: [], strategy: null, createdAt: '', updatedAt: '' } as const;
+      send?.('progress', { step: 'strategy', message: language === 'es' ? 'Creando tu estrategia…' : 'Building your strategy…' });
+      const strategy = await currentLLM('onboarding-strategy').complete(`You are a pragmatic CMO. Write concise Markdown in ${language === 'es' ? 'Spanish' : 'English'} with Positioning, Ideal customer, Themes, Competitors, Channels, and First 30 days. Use only the supplied facts; label assumptions.`, JSON.stringify({ profile, health }));
+      send?.('progress', { step: 'drafts', message: language === 'es' ? 'Preparando 5 primeros borradores…' : 'Preparing 5 starter drafts…' });
+      const pack = await currentLLM('onboarding-drafts').complete(`Return only a JSON array of exactly 5 objects with title, body, angle. Write in ${language === 'es' ? 'Spanish' : 'English'}. The items are, in order: useful blog outline, LinkedIn post <=1300 chars, X post <=280 chars, newsletter, meta description <=155 chars. Avoid clichés and invented claims.`, JSON.stringify({ project: provisional, strategy }));
+      const project = store.createProject({ name: profile.name, url: page.url, description: profile.description, audience: profile.audience, tone: profile.tone, language, strategy });
+      store.addHealthHistory(project.id, health.score, health as unknown as Record<string, unknown>);
+      if (page.text) store.addKnowledgeDocument(project.id, `Website: ${new URL(page.url).hostname}`, page.url, chunkText(page.text).map((text) => ({ text })));
+      const drafts: Draft[] = [];
+      for (const input of starterDrafts(project, pack)) {
+        const output = { ...input, metadata: { ...input.metadata, sources: [{ label: 'K1', title: `Website: ${new URL(page.url).hostname}` }] } };
+        const outcome = await actions.runAction({ actor: 'onboarding', action: 'create_draft', params: { projectId: project.id, agentId: 'onboarding', output }, summary: `Starter draft: ${input.title}`, apply: () => store.createDraft(project.id, 'onboarding', output) });
+        if (outcome.result) drafts.push(outcome.result);
+      }
+      store.setSettings({ onboardingComplete: '1', uiLanguage: language });
+      send?.('result', { project, health, drafts });
+      return { project, health, drafts };
+    };
+    if (c.req.query('stream') === '1') return sse(async (send) => { send('progress', { step: 'start', message: 'Starting…' }); await execute(send); });
+    return c.json(await execute(), 201);
+  });
 
   app.get('/api/projects/:id/knowledge', (c) => c.json({ documents: store.listKnowledgeDocuments(c.req.param('id')) }));
   app.post('/api/projects/:id/knowledge', async (c) => {
@@ -275,13 +369,38 @@ export function createApp({ store, llm, config, fetcher = fetch, publicDir = pat
     return c.json(outcome, outcome.result ? 201 : 202);
   });
 
-  app.get('/api/drafts', (c) => c.json({ drafts: store.listDrafts(c.req.query('project'), c.req.query('status')) }));
+  app.post('/api/projects/:id/month-plan', async (c) => {
+    const project = store.getProject(c.req.param('id'));
+    if (actions.isPaused()) throw new AppError('Agents are paused by Stop all', 409);
+    const chunks = searchKnowledge(store.listKnowledgeChunks(project.id), `${project.name} ${project.strategy || ''}`, { k: 6 });
+    const raw = await currentLLM('month-plan').complete(`You are a practical content planner. Return only a JSON array of exactly 30 objects with keys: topic, title, channel, angle, body. Allowed channels: blog, linkedin, x, newsletter. Write in ${project.language === 'es' ? 'Spanish' : 'English'}. Respect X 280 and LinkedIn 1300 character limits. Vary formats, avoid clichés and invented facts.`, `Project: ${JSON.stringify(project)}\n${formatKnowledgeData(chunks)}`);
+    const created: Draft[] = [];
+    for (const input of monthPlan(project, raw)) {
+      input.metadata = { ...input.metadata, sources: chunks.map((chunk, index) => ({ label: `K${index + 1}`, title: chunk.title, chunkId: chunk.id, documentId: chunk.documentId })) };
+      const outcome = await actions.runAction({ actor: 'month-planner', action: 'create_draft', params: { projectId: project.id, agentId: 'month-planner', output: input }, summary: `Plan: ${input.title}`, apply: () => store.createDraft(project.id, 'month-planner', input) });
+      if (outcome.result) created.push(outcome.result);
+    }
+    return c.json({ drafts: created, approvalRequired: created.length === 0 }, created.length ? 201 : 202);
+  });
+
+  app.get('/api/drafts', (c) => c.json({ drafts: store.listDrafts(c.req.query('project'), c.req.query('status')).map((draft) => ({ ...draft, quality: draftQuality(draft.channel, draft.body) })) }));
   app.patch('/api/drafts/:id', async (c) => {
     const body = await jsonBody(c);
-    return c.json({ draft: store.updateDraft(c.req.param('id'), { title: textField(body.title), body: textField(body.body) }) });
+    const draft = store.updateDraft(c.req.param('id'), { title: textField(body.title), body: textField(body.body) });
+    return c.json({ draft: { ...draft, quality: draftQuality(draft.channel, draft.body) } });
   });
   app.post('/api/drafts/:id/approve', (c) => c.json({ draft: store.transitionDraft(c.req.param('id'), 'approved') }));
   app.post('/api/drafts/:id/reject', (c) => c.json({ draft: store.transitionDraft(c.req.param('id'), 'rejected') }));
+  app.post('/api/drafts/:id/undo-reject', (c) => c.json({ draft: store.transitionDraft(c.req.param('id'), 'pending') }));
+  app.post('/api/drafts/:id/regenerate', async (c) => {
+    const body = await jsonBody(c); const draft = store.getDraft(c.req.param('id'));
+    if (draft.status === 'published') throw new AppError('Published drafts cannot be regenerated', 409);
+    const feedback = textField(body.feedback)?.trim() || `Remove these AI-sounding phrases: ${draftQuality(draft.channel, draft.body).cliches.join(', ') || 'generic filler'}`;
+    const project = store.getProject(draft.projectId);
+    const rewritten = await currentLLM('draft-regenerate').complete(`Rewrite marketing copy in ${project.language === 'es' ? 'Spanish' : 'English'}. Preserve verified facts and any [K#] citations. Respect the channel format and hard limits. Return only the rewritten body.`, `Channel: ${draft.channel}\nFeedback: ${feedback}\n\nCurrent draft:\n${draft.body}`);
+    const updated = store.updateDraft(draft.id, { body: rewritten });
+    return c.json({ draft: { ...updated, quality: draftQuality(updated.channel, updated.body) } });
+  });
   app.post('/api/drafts/:id/schedule', async (c) => {
     const body = await jsonBody(c);
     const outcome = await actions.runAction({ actor: 'human', action: 'schedule', apply: () => store.scheduleDraft(c.req.param('id'), textField(body.scheduledAt) || null, textField(body.connector) || null) });

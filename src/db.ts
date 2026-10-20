@@ -3,10 +3,11 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { createRequire } from 'node:module';
 import { AppError } from './errors.js';
-import type { Approval, Draft, DraftInput, DraftStatus, GeoHistory, KnowledgeDocument, Project } from './types.js';
+import type { Approval, Draft, DraftInput, DraftStatus, GeoHistory, HealthHistory, KnowledgeDocument, Project } from './types.js';
 import type { KnowledgeChunk } from './rag.js';
+import { draftQuality, normalizeProjectUrl } from './product.js';
 
-type ProjectRow = Omit<Project, 'createdAt' | 'updatedAt'> & { created_at: string; updated_at: string };
+type ProjectRow = Omit<Project, 'createdAt' | 'updatedAt' | 'isDemo'> & { is_demo: number; created_at: string; updated_at: string };
 type DraftRow = Omit<Draft, 'projectId' | 'metadata' | 'createdAt' | 'updatedAt'> & {
   project_id: string;
   metadata: string;
@@ -72,6 +73,7 @@ export class Store {
         language TEXT NOT NULL DEFAULT 'en',
         competitors TEXT NOT NULL DEFAULT '[]',
         strategy TEXT,
+        is_demo INTEGER NOT NULL DEFAULT 0,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
       );
@@ -96,6 +98,11 @@ export class Store {
         score REAL NOT NULL, visible INTEGER NOT NULL, total INTEGER NOT NULL, checks TEXT NOT NULL, created_at TEXT NOT NULL
       );
       CREATE INDEX IF NOT EXISTS geo_history_project_created ON geo_history(project_id, created_at);
+      CREATE TABLE IF NOT EXISTS health_history (
+        id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        score INTEGER NOT NULL, report TEXT NOT NULL, created_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS health_history_project_created ON health_history(project_id, created_at);
       CREATE TABLE IF NOT EXISTS knowledge_documents (
         id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
         title TEXT NOT NULL, source TEXT NOT NULL DEFAULT 'paste', created_at TEXT NOT NULL
@@ -116,6 +123,7 @@ export class Store {
     `);
     this.migrateColumn('projects', 'language', "TEXT NOT NULL DEFAULT 'en'");
     this.migrateColumn('projects', 'competitors', "TEXT NOT NULL DEFAULT '[]'");
+    this.migrateColumn('projects', 'is_demo', 'INTEGER NOT NULL DEFAULT 0');
     this.migrateColumn('drafts', 'scheduled_at', 'TEXT');
     this.migrateColumn('drafts', 'scheduled_connector', 'TEXT');
     const integrity = this.db.prepare('PRAGMA integrity_check').get() as Record<string, string> | undefined;
@@ -131,8 +139,8 @@ export class Store {
 
   private mapProject(row: ProjectRow | undefined): Project | undefined {
     if (!row) return undefined;
-    const { created_at, updated_at, ...rest } = row as ProjectRow & { competitors: string };
-    return { ...rest, language: rest.language || 'en', competitors: typeof rest.competitors === 'string' ? JSON.parse(rest.competitors || '[]') : rest.competitors, createdAt: created_at, updatedAt: updated_at } as Project;
+    const { created_at, updated_at, is_demo, ...rest } = row as ProjectRow & { competitors: string };
+    return { ...rest, isDemo: Boolean(is_demo), language: rest.language || 'en', competitors: typeof rest.competitors === 'string' ? JSON.parse(rest.competitors || '[]') : rest.competitors, createdAt: created_at, updatedAt: updated_at } as Project;
   }
 
   private mapDraft(row: DraftRow | undefined): Draft | undefined {
@@ -151,19 +159,33 @@ export class Store {
     return project;
   }
 
-  createProject(input: Partial<Omit<Project, 'id' | 'strategy' | 'createdAt' | 'updatedAt'>>): Project {
+  findProjectByUrl(url: string): Project | undefined {
+    const normalized = normalizeProjectUrl(url);
+    if (!normalized) return undefined;
+    return this.listProjects().find((project) => normalizeProjectUrl(project.url) === normalized);
+  }
+
+  createProject(input: Partial<Omit<Project, 'id' | 'strategy' | 'createdAt' | 'updatedAt'>> & { strategy?: string | null }): Project {
     const name = input.name?.trim();
     if (!name) throw new AppError('name is required');
     const stamp = now();
+    const duplicate = input.url ? this.findProjectByUrl(input.url) : undefined;
+    if (duplicate) throw new AppError('A project for this website already exists', 409, { code: 'duplicate_project', project: duplicate });
     const project: Project = {
       id: randomUUID(), name, url: input.url?.trim() || '', description: input.description?.trim() || '',
-      audience: input.audience?.trim() || '', tone: input.tone?.trim() || '', strategy: null,
+      audience: input.audience?.trim() || '', tone: input.tone?.trim() || '', strategy: input.strategy || null, isDemo: Boolean(input.isDemo),
       language: input.language === 'es' ? 'es' : 'en', competitors: Array.isArray(input.competitors) ? input.competitors.map(String).map((value) => value.trim()).filter(Boolean) : [],
       createdAt: stamp, updatedAt: stamp,
     };
-    this.db.prepare(`INSERT INTO projects (id,name,url,description,audience,tone,language,competitors,strategy,created_at,updated_at)
-      VALUES (@id,@name,@url,@description,@audience,@tone,@language,@competitors,@strategy,@createdAt,@updatedAt)`).run({ ...project, competitors: JSON.stringify(project.competitors) });
+    this.db.prepare(`INSERT INTO projects (id,name,url,description,audience,tone,language,competitors,strategy,is_demo,created_at,updated_at)
+      VALUES (@id,@name,@url,@description,@audience,@tone,@language,@competitors,@strategy,@isDemo,@createdAt,@updatedAt)`).run({ ...project, isDemo: project.isDemo ? 1 : 0, competitors: JSON.stringify(project.competitors) });
     return project;
+  }
+
+  deleteDemoProject(id: string) {
+    const project = this.getProject(id);
+    if (!project.isDemo) throw new AppError('Only sample projects can be deleted here', 403);
+    this.db.prepare('DELETE FROM projects WHERE id = ?').run(id);
   }
 
   setStrategy(id: string, strategy: string): Project {
@@ -177,6 +199,18 @@ export class Store {
     const language = input.language === 'es' ? 'es' : input.language === 'en' ? 'en' : project.language || 'en';
     const competitors = Array.isArray(input.competitors) ? input.competitors.map(String).map((value) => value.trim()).filter(Boolean) : project.competitors || [];
     this.db.prepare('UPDATE projects SET language = ?, competitors = ?, updated_at = ? WHERE id = ?').run(language, JSON.stringify(competitors), now(), id);
+    return this.getProject(id);
+  }
+
+  mergeProject(id: string, input: Partial<Pick<Project, 'name' | 'description' | 'audience' | 'tone' | 'language' | 'competitors'>>): Project {
+    const project = this.getProject(id);
+    const name = input.name?.trim() || project.name;
+    const description = input.description?.trim() || project.description;
+    const audience = input.audience?.trim() || project.audience;
+    const tone = input.tone?.trim() || project.tone;
+    const language = input.language === 'es' ? 'es' : input.language === 'en' ? 'en' : project.language || 'en';
+    const competitors = Array.isArray(input.competitors) && input.competitors.length ? input.competitors.map(String).map((value) => value.trim()).filter(Boolean) : project.competitors || [];
+    this.db.prepare('UPDATE projects SET name = ?, description = ?, audience = ?, tone = ?, language = ?, competitors = ?, updated_at = ? WHERE id = ?').run(name, description, audience, tone, language, JSON.stringify(competitors), now(), id);
     return this.getProject(id);
   }
 
@@ -227,8 +261,12 @@ export class Store {
 
   transitionDraft(id: string, next: DraftStatus, metadata?: Record<string, unknown>): Draft {
     const draft = this.getDraft(id);
+    if (next === 'approved') {
+      const quality = draftQuality(draft.channel, draft.body);
+      if (quality.violations.length) throw new AppError(`Fix channel limits before approval: ${quality.violations.join('; ')}`, 422, { quality });
+    }
     const allowed: Record<DraftStatus, DraftStatus[]> = {
-      pending: ['approved', 'rejected'], approved: ['rejected', 'published'], rejected: ['approved'], published: [],
+      pending: ['approved', 'rejected'], approved: ['rejected', 'published'], rejected: ['pending', 'approved'], published: [],
     };
     if (!allowed[draft.status].includes(next)) {
       throw new AppError(`Cannot transition draft from ${draft.status} to ${next}`, 409);
@@ -271,6 +309,18 @@ export class Store {
   listGeoHistory(projectId: string): GeoHistory[] {
     const rows = this.db.prepare('SELECT * FROM geo_history WHERE project_id = ? ORDER BY created_at').all(projectId) as Array<{ id: string; project_id: string; score: number; visible: number; total: number; checks: string; created_at: string }>;
     return rows.map((row) => ({ id: row.id, projectId: row.project_id, score: row.score, visible: row.visible, total: row.total, checks: JSON.parse(row.checks), createdAt: row.created_at }));
+  }
+
+  addHealthHistory(projectId: string, score: number, report: Record<string, unknown>): HealthHistory {
+    this.getProject(projectId);
+    const item: HealthHistory = { id: randomUUID(), projectId, score: Math.max(0, Math.min(100, Math.round(score))), report, createdAt: now() };
+    this.db.prepare('INSERT INTO health_history (id,project_id,score,report,created_at) VALUES (?,?,?,?,?)').run(item.id, item.projectId, item.score, JSON.stringify(item.report), item.createdAt);
+    return item;
+  }
+
+  listHealthHistory(projectId: string): HealthHistory[] {
+    const rows = this.db.prepare('SELECT * FROM health_history WHERE project_id = ? ORDER BY created_at').all(projectId) as Array<{ id: string; project_id: string; score: number; report: string; created_at: string }>;
+    return rows.map((row) => ({ id: row.id, projectId: row.project_id, score: row.score, report: JSON.parse(row.report), createdAt: row.created_at }));
   }
 
   addKnowledgeDocument(projectId: string, title: string, source: string, chunks: Array<{ text: string; embedding?: number[] | null }>): KnowledgeDocument {

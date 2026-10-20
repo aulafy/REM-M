@@ -25,7 +25,17 @@ ollama serve
 
 Change `LLM_BASE_URL`, `LLM_API_KEY`, and `LLM_MODEL` in `.env` to use another compatible provider. `LLM_TIMEOUT_MS` controls the request timeout and defaults to 300000 (five minutes), which is useful for slower local models; it can also be changed in Settings. Project data is stored in `data/opencmo.sqlite`. Markdown publications go to `exports/` by default.
 
-## What v0.3 includes
+## What v0.4 includes
+
+- A resumable, three-step first-run wizard with local Ollama model detection, cloud presets, connection testing, guided site profiling, live analysis progress, a deterministic site-health score, strategy, and five ready-to-review starter drafts
+- A project-level **Today** dashboard with health trend, three ranked next actions, pending approvals, the coming week's content, and the latest briefing
+- **Generate my month**, which creates 30 multi-channel pending drafts spread across the calendar without publishing anything
+- Draft sources, channel character limits enforced before approval, live counters, cliché detection, one-click cleanup, and regeneration with written feedback
+- Complete English/Spanish navigation and product guidance, normalized-URL duplicate prevention with an explicit merge, friendly recovery actions, loading skeletons, reject undo, accessible focus styles, shortcut help, and responsive layouts
+- A no-LLM sample business with canned strategy, drafts, knowledge, health, and AI-visibility history; sample data is clearly marked and removable
+- Simplified Basic settings for the AI engine, language, and export folder, with connectors, backups, Telegram, Hindsight, retrieval, and rate controls under Advanced
+
+All v0.3 knowledge, policy, observability, safe-fetching, briefing, backup, and memory features remain available.
 
 - URL onboarding and an LLM-generated strategy covering positioning, ICP, keyword themes, competitors to investigate, and channels
 - Writer, SEO, GEO, Reddit, X, LinkedIn, Newsletter, and HN/Product Hunt launch agents
@@ -65,10 +75,18 @@ All request and response bodies are JSON.
 GET  /api/health
 GET/PUT /api/settings
 POST /api/settings/test-llm
+GET  /api/engines/ollama
 GET  /api/projects
 POST /api/projects
 PATCH /api/projects/:id
+POST /api/projects/:id/merge
+DELETE /api/projects/:id                 (sample projects only)
+GET  /api/projects/:id/dashboard
+POST /api/projects/:id/health
 POST /api/projects/:id/strategy
+POST /api/projects/:id/month-plan
+POST /api/onboarding/run
+POST /api/demo
 GET  /api/agents
 POST /api/projects/:id/agents/:agent/run  { "task": "..." }
 GET  /api/drafts?project=&status=
@@ -76,6 +94,8 @@ PATCH /api/drafts/:id                    { "body": "..." }
 POST /api/drafts/bulk
 POST /api/drafts/:id/approve
 POST /api/drafts/:id/reject
+POST /api/drafts/:id/undo-reject
+POST /api/drafts/:id/regenerate
 POST /api/drafts/:id/schedule
 POST /api/drafts/:id/publish             { "connector": "markdown" }
 GET  /api/connectors
@@ -129,7 +149,7 @@ Docker users can run `docker compose up --build`. To start the optional Ollama c
 
 ## Screenshots
 
-> Screenshots placeholder — strategy, agent progress, draft inbox, content calendar, and settings views will be added here.
+> Screenshots placeholder — first-run wizard, Today dashboard, quality-aware inbox, content calendar, and simplified settings views will be added here.
 
 ## OpenCMO and okara.ai
 
