@@ -118,3 +118,5 @@ Owner feedback: "no se entiende qué hacer; hay que dárselo todo muy masticado 
 8. **First-run tour**: 5-step highlight tour (skippable) the first time; plus a persistent "Where am I?" progress bar.
 9. **Success moments**: after the first approved post, show a celebration + "Next: schedule it for tomorrow 9:00" suggestion.
 10. Tests: stepper state machine (pure functions) incl. skipping/resuming, vocabulary mapping completeness EN/ES (every UI key present in both), no jargon leakage in Simple mode strings (test list of banned words: LLM, RAG, SSRF, JSON, API, GEO, token, endpoint, policy, connector, webhook), accessibility labels. Update README with a "For non-technical users" section, bump 0.8.0, CHANGELOG.
+
+Extra fixes for v0.8 (from manual QA of v0.7): sidebar project items render as flat grey blocks (unstyled buttons) — style them as proper nav items with active state; /api/health version must come from package.json (single source of truth), not a hardcoded string; the sidebar still shows jargon (Agents, Knowledge, Rules) — Simple mode must use the plain vocabulary.

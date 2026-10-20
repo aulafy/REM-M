@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>OpenCMO — Tu plan de marketing</title>
+  <meta name="theme-color" content="#0f766e">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.svg">
+  <link rel="stylesheet" href="/guided.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/" aria-label="OpenCMO"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 4.5 7.25v9.5L12 21l7.5-4.25v-9.5L12 3Z"/><path d="m8.4 14.2 3.6-6 3.6 6M9.6 12.2h4.8"/></svg><span>OpenCMO</span></a>
+    <div id="job-pill" class="job-pill" hidden role="status" aria-live="polite"><span class="spin"></span><span id="job-text"></span></div>
+    <nav class="top-actions" aria-label="Opciones">
+      <button id="lang" class="link" type="button"></button>
+      <a id="advanced" class="link" href="/advanced"></a>
+    </nav>
+  </header>
+  <main id="app" aria-live="polite"><p class="loading">Cargando…</p></main>
+  <div id="toast" class="toast" role="status" hidden></div>
+  <script type="module" src="/guided.js"></script>
+</body>
+</html>

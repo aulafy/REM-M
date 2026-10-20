@@ -219,11 +219,14 @@ export class Store {
     return this.getProject(id);
   }
 
-  updateProject(id: string, input: { language?: string; competitors?: string[] }): Project {
+  updateProject(id: string, input: { language?: string; competitors?: string[]; name?: string; description?: string; audience?: string; tone?: string }): Project {
     const project = this.getProject(id);
     const language = input.language === 'es' ? 'es' : input.language === 'en' ? 'en' : project.language || 'en';
     const competitors = Array.isArray(input.competitors) ? input.competitors.map(String).map((value) => value.trim()).filter(Boolean).slice(0, 5) : project.competitors || [];
-    this.db.prepare('UPDATE projects SET language = ?, competitors = ?, updated_at = ? WHERE id = ?').run(language, JSON.stringify(competitors), now(), id);
+    const text = (value: string | undefined, fallback: string | undefined, max: number) => (typeof value === 'string' ? value.trim().slice(0, max) : fallback || '');
+    const name = text(input.name, project.name, 120) || project.name;
+    this.db.prepare('UPDATE projects SET language = ?, competitors = ?, name = ?, description = ?, audience = ?, tone = ?, updated_at = ? WHERE id = ?')
+      .run(language, JSON.stringify(competitors), name, text(input.description, project.description, 1000), text(input.audience, project.audience, 500), text(input.tone, project.tone, 200), now(), id);
     return this.getProject(id);
   }
 

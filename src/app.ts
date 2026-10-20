@@ -241,7 +241,7 @@ export function createApp({ store, llm, config, fetcher = fetch, publicDir = pat
     await next();
   });
 
-  app.get('/api/health', (c) => c.json({ ok: store.integrityStatus === 'ok', version: '0.6.0', integrity: store.integrityStatus }));
+  app.get('/api/health', (c) => c.json({ ok: store.integrityStatus === 'ok', version: '0.7.0', integrity: store.integrityStatus }));
   app.get('/api/settings', (c) => {
     const stored = store.getSettings();
     const extras = Object.fromEntries(settingKeys.filter((key) => !secretSettingKeys.has(key) && stored[key] !== undefined).map((key) => [key, stored[key]]));
@@ -322,7 +322,7 @@ export function createApp({ store, llm, config, fetcher = fetch, publicDir = pat
   app.patch('/api/projects/:id', async (c) => {
     const body = await jsonBody(c);
     const competitors = Array.isArray(body.competitors) ? body.competitors.map(String) : textField(body.competitors)?.split(',');
-    return c.json({ project: store.updateProject(c.req.param('id'), { language: textField(body.language), competitors }) });
+    return c.json({ project: store.updateProject(c.req.param('id'), { language: textField(body.language), competitors, name: textField(body.name), description: textField(body.description), audience: textField(body.audience), tone: textField(body.tone) }) });
   });
   app.post('/api/projects/:id/merge', async (c) => {
     const body = await jsonBody(c);
@@ -620,6 +620,8 @@ export function createApp({ store, llm, config, fetcher = fetch, publicDir = pat
   app.get('/api/connectors', (c) => c.json({ connectors: configuredConnectors(store, config, fetcher).map(({ id, name, configured }) => ({ id, name, configured })) }));
 
   app.all('/api/*', (c) => c.json({ error: 'API route not found' }, 404));
+  app.get('/', serveStatic({ path: path.join(publicDir, 'guided.html') }));
+  app.get('/advanced', serveStatic({ path: path.join(publicDir, 'index.html') }));
   app.use('/*', serveStatic({ root: publicDir }));
   app.get('*', serveStatic({ path: path.join(publicDir, 'index.html') }));
   return app;
