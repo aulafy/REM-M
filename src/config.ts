@@ -8,6 +8,7 @@ export interface Config {
   llmApiKey: string;
   llmModel: string;
   llmTimeoutMs: number;
+  llmMaxConcurrency: number;
   markdownExportDir: string;
   wordpress: { url: string; username: string; password: string };
   github: { token: string; repo: string; branch: string };
@@ -22,6 +23,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('PORT must be a valid TCP port');
   const llmTimeoutMs = Number(env.LLM_TIMEOUT_MS ?? 300_000);
   if (!Number.isInteger(llmTimeoutMs) || llmTimeoutMs < 1) throw new Error('LLM_TIMEOUT_MS must be a positive integer');
+  const llmMaxConcurrency = Number(env.LLM_MAX_CONCURRENCY ?? 1);
+  if (!Number.isInteger(llmMaxConcurrency) || llmMaxConcurrency < 1) throw new Error('LLM_MAX_CONCURRENCY must be a positive integer');
   return {
     port,
     host: env.HOST || '127.0.0.1',
@@ -30,6 +33,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     llmApiKey: env.LLM_API_KEY || 'ollama',
     llmModel: env.LLM_MODEL || 'llama3.2',
     llmTimeoutMs,
+    llmMaxConcurrency,
     markdownExportDir: path.resolve(env.MARKDOWN_EXPORT_DIR || './exports'),
     wordpress: {
       url: (env.WP_URL || '').replace(/\/$/, ''),

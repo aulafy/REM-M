@@ -3,7 +3,7 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { createRequire } from 'node:module';
 import { AppError } from './errors.js';
-import type { Approval, Draft, DraftInput, DraftStatus, GeoHistory, HealthHistory, KnowledgeDocument, Project, SearchOpportunity } from './types.js';
+import type { Approval, Draft, DraftInput, DraftStatus, GeoHistory, HealthHistory, Job, KnowledgeDocument, Project, SearchOpportunity } from './types.js';
 import type { KnowledgeChunk } from './rag.js';
 import { draftQuality, normalizeProjectUrl } from './product.js';
 
@@ -16,6 +16,7 @@ type DraftRow = Omit<Draft, 'projectId' | 'metadata' | 'createdAt' | 'updatedAt'
   scheduled_at: string | null;
   scheduled_connector: string | null;
 };
+type JobRow = Omit<Job, 'projectId' | 'payload' | 'createdAt' | 'updatedAt'> & { project_id: string; payload: string; created_at: string; updated_at: string };
 
 const now = () => new Date().toISOString();
 
@@ -126,12 +127,24 @@ export class Store {
         position REAL NOT NULL, score REAL NOT NULL, created_at TEXT NOT NULL
       );
       CREATE INDEX IF NOT EXISTS search_opportunities_project_score ON search_opportunities(project_id, score DESC);
+      CREATE TABLE IF NOT EXISTS jobs (
+        id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        kind TEXT NOT NULL, status TEXT NOT NULL CHECK(status IN ('queued','running','done','failed','cancelled')),
+        progress INTEGER NOT NULL DEFAULT 0, total INTEGER NOT NULL DEFAULT 1, message TEXT NOT NULL DEFAULT '',
+        error TEXT NOT NULL DEFAULT '', payload TEXT NOT NULL DEFAULT '{}', priority INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS jobs_status_priority ON jobs(status, priority DESC, created_at);
+      CREATE INDEX IF NOT EXISTS jobs_project_created ON jobs(project_id, created_at DESC);
     `);
     this.migrateColumn('projects', 'language', "TEXT NOT NULL DEFAULT 'en'");
     this.migrateColumn('projects', 'competitors', "TEXT NOT NULL DEFAULT '[]'");
     this.migrateColumn('projects', 'is_demo', 'INTEGER NOT NULL DEFAULT 0');
     this.migrateColumn('drafts', 'scheduled_at', 'TEXT');
     this.migrateColumn('drafts', 'scheduled_connector', 'TEXT');
+    this.migrateColumn('jobs', 'payload', "TEXT NOT NULL DEFAULT '{}'");
+    this.migrateColumn('jobs', 'priority', 'INTEGER NOT NULL DEFAULT 0');
+    this.db.prepare("UPDATE jobs SET status = 'queued', message = 'Resuming after restart', updated_at = ? WHERE status = 'running'").run(now());
     const integrity = this.db.prepare('PRAGMA integrity_check').get() as Record<string, string> | undefined;
     this.integrityStatus = integrity ? Object.values(integrity)[0] || 'unknown' : 'unknown';
   }
@@ -153,6 +166,12 @@ export class Store {
     if (!row) return undefined;
     const { project_id, created_at, updated_at, scheduled_at, scheduled_connector, metadata, ...rest } = row;
     return { ...rest, projectId: project_id, metadata: JSON.parse(metadata), scheduledAt: scheduled_at, scheduledConnector: scheduled_connector, createdAt: created_at, updatedAt: updated_at };
+  }
+
+  private mapJob(row: JobRow | undefined): Job | undefined {
+    if (!row) return undefined;
+    const { project_id, payload, created_at, updated_at, ...rest } = row;
+    return { ...rest, projectId: project_id, payload: JSON.parse(payload || '{}'), createdAt: created_at, updatedAt: updated_at };
   }
 
   listProjects(): Project[] {
@@ -257,9 +276,10 @@ export class Store {
     const nextTitle = input.title ?? draft.title;
     const nextBody = input.body ?? draft.body;
     const revisions = Array.isArray(draft.metadata.revisions) ? draft.metadata.revisions : [];
+    const changedMetadata = input.body !== undefined && input.body.trim() && draft.metadata.needsBody ? { ...draft.metadata, needsBody: false, writing: false } : draft.metadata;
     const metadata = (nextTitle !== draft.title || nextBody !== draft.body)
-      ? { ...draft.metadata, revisions: [...revisions, { title: draft.title, body: draft.body, editedAt: now() }].slice(-20) }
-      : draft.metadata;
+      ? { ...changedMetadata, revisions: [...revisions, { title: draft.title, body: draft.body, editedAt: now() }].slice(-20) }
+      : changedMetadata;
     this.db.prepare('UPDATE drafts SET title = ?, body = ?, metadata = ?, updated_at = ? WHERE id = ?')
       .run(nextTitle, nextBody, JSON.stringify(metadata), now(), id);
     return this.getDraft(id);
@@ -268,6 +288,7 @@ export class Store {
   transitionDraft(id: string, next: DraftStatus, metadata?: Record<string, unknown>): Draft {
     const draft = this.getDraft(id);
     if (next === 'approved') {
+      if (draft.metadata.needsBody) throw new AppError('This draft is still being written and cannot be approved', 409, { code: 'draft_needs_body' });
       const quality = draftQuality(draft.channel, draft.body);
       if (quality.violations.length) throw new AppError(`Fix channel limits before approval: ${quality.violations.join('; ')}`, 422, { quality });
     }
@@ -285,6 +306,7 @@ export class Store {
 
   scheduleDraft(id: string, scheduledAt: string | null, connector: string | null): Draft {
     const draft = this.getDraft(id);
+    if (draft.metadata.needsBody) throw new AppError('This draft is still being written and cannot be scheduled', 409, { code: 'draft_needs_body' });
     if (draft.status !== 'approved') throw new AppError('Only approved drafts can be scheduled', 409);
     if (scheduledAt && (!connector || Number.isNaN(Date.parse(scheduledAt)))) throw new AppError('A valid date and connector are required');
     this.db.prepare('UPDATE drafts SET scheduled_at = ?, scheduled_connector = ?, updated_at = ? WHERE id = ?').run(scheduledAt, connector, now(), id);
@@ -389,7 +411,61 @@ export class Store {
     const since = new Date(Date.now() - 86_400_000).toISOString();
     const rows = this.db.prepare('SELECT * FROM llm_calls WHERE at > ? ORDER BY id DESC').all(since) as Array<{ ms: number; tokens_in: number; tokens_out: number; status: string; purpose: string; model: string; at: string; error: string }>;
     const ok = rows.filter((row) => row.status === 'ok');
-    return { calls24h: rows.length, errors24h: rows.length - ok.length, avgMs: ok.length ? Math.round(ok.reduce((sum, row) => sum + row.ms, 0) / ok.length) : 0, tokens24h: rows.reduce((sum, row) => sum + row.tokens_in + row.tokens_out, 0), recent: rows.slice(0, 12) };
+    const timed = ok.filter((row) => row.ms > 0 && row.tokens_out > 0).slice(0, 20);
+    const tokensPerSecond = timed.length ? Number((timed.reduce((sum, row) => sum + row.tokens_out, 0) / (timed.reduce((sum, row) => sum + row.ms, 0) / 1000)).toFixed(1)) : 0;
+    return { calls24h: rows.length, errors24h: rows.length - ok.length, avgMs: ok.length ? Math.round(ok.reduce((sum, row) => sum + row.ms, 0) / ok.length) : 0, tokens24h: rows.reduce((sum, row) => sum + row.tokens_in + row.tokens_out, 0), tokensPerSecond, recent: rows.slice(0, 12) };
+  }
+
+  createJob(projectId: string, kind: string, input: { total?: number; message?: string; payload?: Record<string, unknown>; priority?: number } = {}): Job {
+    this.getProject(projectId);
+    const stamp = now();
+    const job: Job = { id: randomUUID(), projectId, kind, status: 'queued', progress: 0, total: Math.max(1, Math.round(input.total || 1)), message: input.message || 'Queued', error: '', payload: input.payload || {}, priority: Math.round(input.priority || 0), createdAt: stamp, updatedAt: stamp };
+    this.db.prepare('INSERT INTO jobs (id,project_id,kind,status,progress,total,message,error,payload,priority,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)').run(job.id, job.projectId, job.kind, job.status, job.progress, job.total, job.message, job.error, JSON.stringify(job.payload), job.priority, job.createdAt, job.updatedAt);
+    return job;
+  }
+
+  getJob(id: string): Job {
+    const job = this.mapJob(this.db.prepare('SELECT * FROM jobs WHERE id = ?').get(id) as JobRow | undefined);
+    if (!job) throw new AppError('Job not found', 404);
+    return job;
+  }
+
+  listJobs(projectId?: string): Job[] {
+    const rows = projectId
+      ? this.db.prepare('SELECT * FROM jobs WHERE project_id = ? ORDER BY created_at DESC').all(projectId)
+      : this.db.prepare('SELECT * FROM jobs ORDER BY created_at DESC').all();
+    return (rows as JobRow[]).map((row) => this.mapJob(row)!);
+  }
+
+  nextQueuedJob(): Job | undefined {
+    return this.mapJob(this.db.prepare("SELECT * FROM jobs WHERE status = 'queued' ORDER BY priority DESC, created_at ASC LIMIT 1").get() as JobRow | undefined);
+  }
+
+  updateJob(id: string, input: Partial<Pick<Job, 'status' | 'progress' | 'total' | 'message' | 'error' | 'payload' | 'priority'>>): Job {
+    const job = this.getJob(id);
+    const next = { ...job, ...input, progress: input.progress === undefined ? job.progress : Math.max(0, Math.round(input.progress)), total: input.total === undefined ? job.total : Math.max(1, Math.round(input.total)), updatedAt: now() };
+    this.db.prepare('UPDATE jobs SET status=?, progress=?, total=?, message=?, error=?, payload=?, priority=?, updated_at=? WHERE id=?').run(next.status, next.progress, next.total, next.message, next.error, JSON.stringify(next.payload), next.priority, next.updatedAt, id);
+    return this.getJob(id);
+  }
+
+  cancelJob(id: string): Job {
+    const job = this.getJob(id);
+    if (job.status === 'done' || job.status === 'failed') throw new AppError(`Cannot cancel a ${job.status} job`, 409);
+    if (job.status === 'cancelled') return job;
+    return this.updateJob(id, { status: 'cancelled', message: 'Cancelled' });
+  }
+
+  retryJob(id: string): Job {
+    const job = this.getJob(id);
+    if (!['failed', 'cancelled'].includes(job.status)) throw new AppError('Only failed or cancelled jobs can be retried', 409);
+    return this.updateJob(id, { status: 'queued', error: '', message: 'Queued to retry', priority: job.priority + 1 });
+  }
+
+  updateDraftMetadata(id: string, values: Record<string, unknown>): Draft {
+    const draft = this.getDraft(id);
+    const metadata = { ...draft.metadata, ...values };
+    this.db.prepare('UPDATE drafts SET metadata = ?, updated_at = ? WHERE id = ?').run(JSON.stringify(metadata), now(), id);
+    return this.getDraft(id);
   }
 
   briefingFacts(projectId: string, at = new Date()) {

@@ -35,9 +35,18 @@ ollama serve
 
 **Model quality matters.** In our SEO-audit test on a real site, a 3B model (`llama3.2:3b`) contradicted the measured findings and invented issues, while a 9B model (Qwen 3.5 9B) stuck to the evidence. Use a ~8B+ model for real work. Thinking models are called with `reasoning_effort: none` by default (override with `LLM_REASONING_EFFORT`) so they do not spend minutes reasoning.
 
-Change `LLM_BASE_URL`, `LLM_API_KEY`, and `LLM_MODEL` in `.env` to use another compatible provider. `LLM_TIMEOUT_MS` controls the request timeout and defaults to 300000 (five minutes), which is useful for slower local models; it can also be changed in Settings. Project data is stored in `data/opencmo.sqlite`. Markdown publications go to `exports/` by default.
+Change `LLM_BASE_URL`, `LLM_API_KEY`, and `LLM_MODEL` in `.env` to use another compatible provider. `LLM_TIMEOUT_MS` controls each individual LLM call and defaults to 300000 (five minutes); a long monthly job is not subject to one global timeout. `LLM_MAX_CONCURRENCY` defaults to 1 so local-model calls are serialized. Project data is stored in `data/opencmo.sqlite`. Markdown publications go to `exports/` by default.
 
-## What v0.5 includes
+## What v0.6 includes
+
+- Persistent SQLite-backed background jobs that resume after restart, serialize local-model calls by default, stream live progress through SSE, and support cancel/retry from the header
+- Two-phase monthly plans: four compact weekly outline batches create 30 calendar placeholders, then short per-draft calls fill bodies while the user can already review the plan
+- Robust JSON extraction/repair with one retry per weekly batch, title deduplication, partial-result preservation, and per-draft **Write this one now** priority
+- Concise, structured strategies capped at about 450 words and streamed into the UI; first-run strategy work uses the same durable job system
+- Rolling model-speed estimates and warnings for work likely to exceed five minutes, plus an optional fast model dedicated to draft bodies
+- Approval, scheduling, and publishing guards that reject any draft whose body is not finished
+
+All v0.5 agency features remain available:
 
 - White-label, self-contained client reports with agency branding, executive summary, measured site findings, AI visibility, search opportunities, 30-day plan, next steps, and print-to-PDF CSS
 - Search Console Queries CSV import in English or Spanish, ranked low-CTR opportunities, and one-click Writer drafts grounded in query context
@@ -113,6 +122,7 @@ POST /api/projects/:id/competitors/audit
 POST /api/projects/:id/health
 POST /api/projects/:id/strategy
 POST /api/projects/:id/month-plan
+GET  /api/projects/:id/estimate?kind=month-plan
 POST /api/onboarding/run
 POST /api/demo
 GET  /api/agents
@@ -124,8 +134,13 @@ POST /api/drafts/:id/approve
 POST /api/drafts/:id/reject
 POST /api/drafts/:id/undo-reject
 POST /api/drafts/:id/regenerate
+POST /api/drafts/:id/write-now
 POST /api/drafts/:id/schedule
 POST /api/drafts/:id/publish             { "connector": "markdown" }
+GET  /api/jobs?project=
+GET  /api/jobs/stream                    (SSE)
+POST /api/jobs/:id/cancel
+POST /api/jobs/:id/retry
 GET  /api/connectors
 GET/POST /api/projects/:id/knowledge
 POST /api/projects/:id/knowledge/import-site
@@ -146,9 +161,9 @@ curl -s http://127.0.0.1:3000/api/projects \
 
 ```text
 Browser (vanilla HTML/CSS/JS)
-        │ JSON
+        │ JSON / SSE
         ▼
-Hono API ─── agents ─── OpenAI-compatible LLM
+Hono API ─── persistent job worker ─── agents ─── OpenAI-compatible LLM
    │            │
 SQLite      website / Reddit research
    │

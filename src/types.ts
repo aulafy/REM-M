@@ -63,7 +63,25 @@ export interface GeoHistory {
 }
 
 export interface LLM {
-  complete(system: string, user: string): Promise<string>;
+  complete(system: string, user: string, signal?: AbortSignal): Promise<string>;
+  stream?(system: string, user: string, onToken: (token: string) => void, signal?: AbortSignal): Promise<string>;
+}
+
+export type JobStatus = 'queued' | 'running' | 'done' | 'failed' | 'cancelled';
+
+export interface Job {
+  id: string;
+  projectId: string;
+  kind: string;
+  status: JobStatus;
+  progress: number;
+  total: number;
+  message: string;
+  error: string;
+  payload: Record<string, unknown>;
+  priority: number;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface AgentRunOptions {

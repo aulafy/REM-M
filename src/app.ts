@@ -19,6 +19,8 @@ import { briefIsDue, buildBrief } from './briefs.js';
 import { dashboardActions, draftQuality, monthPlan, siteHealthFromAudit, starterDrafts } from './product.js';
 import { auditUrl } from './web.js';
 import { buildClientReport, competitorMetric, findSearchOpportunities, parseGscQueriesCsv, whereCompetitorsBeatYou } from './v05.js';
+import { bodySystemPrompt, completeWithTokens, conciseStrategyPrompt, dedupeOutlineTitles, enforceBodyLimit, jobEstimate, JobWorker, monthBatchSizes, parseOutlineBatch, trimWords } from './jobs.js';
+import type { JobContext } from './jobs.js';
 
 export interface AppDependencies {
   store: Store;
@@ -78,6 +80,7 @@ function configuredConnectors(store: Store, config: Config, fetcher: typeof fetc
 
 export async function publishDraft(store: Store, config: Config, fetcher: typeof fetch, draft: Draft, connectorId: string): Promise<{ draft: Draft; result: unknown }> {
   if (draft.status !== 'approved') throw new AppError('Draft must be approved before publishing', 409);
+  if (draft.metadata.needsBody) throw new AppError('This draft is still being written and cannot be published', 409, { code: 'draft_needs_body' });
   const connector = configuredConnectors(store, config, fetcher).find((item) => item.id === connectorId);
   if (!connector) throw new AppError('Connector not found', 404);
   if (!connector.configured) throw new AppError(`${connector.name} connector is not configured`);
@@ -120,11 +123,107 @@ export function createApp({ store, llm, config, fetcher = fetch, publicDir = pat
   const actions = new ActionRunner(store, store.filename === ':memory:' ? undefined : config.dataDir);
   const backups = new BackupManager(store, config.dataDir);
   const memory = new HindsightMemory(() => store.getSettings(), fetcher);
-  const currentLLM = (purpose = 'general') => {
+  const currentLLM = (purpose = 'general', useFastModel = false) => {
     const active = currentConfig();
-    const inner = llm || new OpenAICompatibleLLM(active.llmBaseUrl, active.llmApiKey, active.llmModel, fetcher, active.llmTimeoutMs);
-    return new ObservedLLM(inner, store, purpose, active.llmModel);
+    const model = useFastModel && store.getSettings().llmFastModel ? store.getSettings().llmFastModel : active.llmModel;
+    const inner = llm || new OpenAICompatibleLLM(active.llmBaseUrl, active.llmApiKey, model, fetcher, active.llmTimeoutMs);
+    return new ObservedLLM(inner, store, purpose, model);
   };
+
+  const writeDraftBody = async (jobId: string, draftId: string, context: JobContext) => {
+    const draft = store.getDraft(draftId); if (!draft.metadata.needsBody) return;
+    const project = store.getProject(draft.projectId);
+    const chunks = searchKnowledge(store.listKnowledgeChunks(project.id), `${draft.title} ${String(draft.metadata.angle || '')}`, { k: 4 });
+    store.updateDraftMetadata(draft.id, { writing: true });
+    try {
+      const body = await currentLLM('month-plan:body', true).complete(bodySystemPrompt(project, draft.channel), `Title: ${draft.title}\nAngle: ${String(draft.metadata.angle || '')}\nTopic: ${String(draft.metadata.topic || '')}\n\n${formatKnowledgeData(chunks)}`, context.signal);
+      context.assertActive();
+      const grounded = body.replace(/\s*\[K(\d+)\]/g, (match, n: string) => (Number(n) >= 1 && Number(n) <= chunks.length ? match : ''));
+      const updated = store.updateDraft(draft.id, { body: enforceBodyLimit(draft.channel, grounded) });
+      store.updateDraftMetadata(updated.id, { needsBody: false, writing: false, bodyJobId: jobId, sources: chunks.map((chunk, index) => ({ label: `K${index + 1}`, title: chunk.title, chunkId: chunk.id, documentId: chunk.documentId })) });
+    } finally {
+      if (store.getDraft(draft.id).metadata.writing) store.updateDraftMetadata(draft.id, { writing: false });
+    }
+  };
+
+  const worker = new JobWorker(store, async (initial, context) => {
+    if (actions.isPaused()) throw new AppError('Agents are paused by Stop all', 409);
+    const project = store.getProject(initial.projectId);
+    if (initial.kind === 'strategy') {
+      if (!project.url) throw new AppError('Project URL is required to build a strategy');
+      context.update({ message: 'Reading the website…' });
+      const page = await fetchPage(project.url, fetcher, config.allowPrivateFetch); context.assertActive();
+      context.update({ message: 'Writing your strategy…' });
+      const strategy = await completeWithTokens(currentLLM('strategy'), conciseStrategyPrompt(project), `Project: ${JSON.stringify(project)}\n\nWebsite text:\n${page.text}`, context.token, context.signal);
+      context.assertActive(); store.setStrategy(project.id, trimWords(strategy));
+      return;
+    }
+    if (initial.kind === 'onboarding') {
+      context.update({ total: 3, progress: 0, message: project.language === 'es' ? 'Comprobando la salud del sitio…' : 'Checking site health…', payload: { ...initial.payload, stage: 'health' } });
+      const [page, audit] = await Promise.all([fetchPage(project.url, fetcher, config.allowPrivateFetch), auditUrl(project.url, fetcher, config.allowPrivateFetch)]); context.assertActive();
+      const health = siteHealthFromAudit(audit); store.addHealthHistory(project.id, health.score, health as unknown as Record<string, unknown>);
+      if (page.text && !store.listKnowledgeDocuments(project.id).length) store.addKnowledgeDocument(project.id, `Website: ${new URL(page.url).hostname}`, page.url, chunkText(page.text).map((text) => ({ text })));
+      context.update({ progress: 1, message: project.language === 'es' ? 'Creando tu estrategia…' : 'Building your strategy…', payload: { ...context.assertActive().payload, stage: 'strategy' } });
+      const strategy = await completeWithTokens(currentLLM('onboarding-strategy'), conciseStrategyPrompt(project), JSON.stringify({ project, health, websiteText: page.text.slice(0, 20_000) }), context.token, context.signal);
+      context.assertActive(); store.setStrategy(project.id, trimWords(strategy));
+      context.update({ progress: 2, message: project.language === 'es' ? 'Preparando 5 primeros borradores…' : 'Preparing 5 starter drafts…', payload: { ...context.assertActive().payload, stage: 'drafts' } });
+      const pack = await currentLLM('onboarding-drafts').complete(`Return only a JSON array of exactly 5 objects with title, body, angle. Write in ${project.language === 'es' ? 'Spanish' : 'English'}. The items are, in order: useful blog outline, LinkedIn post <=1300 chars, X post <=280 chars, newsletter, meta description <=155 chars. Avoid clichés and invented claims.`, JSON.stringify({ project: store.getProject(project.id), strategy: trimWords(strategy) }), context.signal);
+      for (const input of starterDrafts(project, pack)) {
+        context.assertActive(); const output = { ...input, metadata: { ...input.metadata, sources: [{ label: 'K1', title: `Website: ${new URL(page.url).hostname}` }] } };
+        await actions.runAction({ actor: 'onboarding', action: 'create_draft', params: { projectId: project.id, agentId: 'onboarding', output }, summary: `Starter draft: ${input.title}`, apply: () => store.createDraft(project.id, 'onboarding', output) });
+      }
+      store.setSettings({ onboardingComplete: '1', uiLanguage: project.language || 'en' });
+      return;
+    }
+    if (initial.kind === 'draft-body') {
+      const draftId = String(initial.payload.draftId || ''); if (!draftId) throw new AppError('Draft body job is missing its draft');
+      context.update({ total: 1, progress: 0, message: 'Writing this draft…', payload: { ...initial.payload, currentDraftId: draftId } });
+      await writeDraftBody(initial.id, draftId, context); return;
+    }
+    if (initial.kind !== 'month-plan') throw new AppError(`Unknown job kind: ${initial.kind}`);
+
+    for (const draft of store.listDrafts(project.id).filter((item) => item.metadata.monthJobId === initial.id && item.metadata.writing)) store.updateDraftMetadata(draft.id, { writing: false });
+    const used = new Set(store.listDrafts(project.id).filter((draft) => draft.metadata.monthJobId === initial.id).map((draft) => draft.title.normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\W+/g, ' ').trim()));
+    let offset = 0;
+    for (let batch = 0; batch < monthBatchSizes.length; batch += 1) {
+      const expected = monthBatchSizes[batch];
+      const existing = store.listDrafts(project.id).filter((draft) => draft.metadata.monthJobId === initial.id && draft.metadata.outlineBatch === batch);
+      if (existing.length >= expected) { offset += expected; continue; }
+      context.update({ message: `${project.language === 'es' ? 'Planificando semana' : 'Planning week'} ${batch + 1}/4`, payload: { ...context.assertActive().payload, outlineBatch: batch } });
+      const system = `You are a practical content planner. Return only a compact JSON array of exactly ${expected} objects with keys topic, title, channel, angle. No bodies. Allowed channels: blog, linkedin, x, newsletter. Write in ${project.language === 'es' ? 'Spanish' : 'English'}. Vary formats and search intent; avoid clichés and invented claims.`;
+      const user = `Week ${batch + 1} of 4. Do not repeat these titles: ${[...used].join(' | ')}\nProject: ${JSON.stringify(project)}\n${formatKnowledgeData(searchKnowledge(store.listKnowledgeChunks(project.id), `${project.name} ${project.strategy || ''}`, { k: 6 }))}`;
+      let raw = await currentLLM(`month-plan:outline:${batch + 1}`).complete(system, user, context.signal); let outline;
+      try { outline = parseOutlineBatch(raw, expected); }
+      catch (firstError) {
+        raw = await currentLLM(`month-plan:outline-repair:${batch + 1}`).complete(`${system}\nYour previous response was invalid. Repair it and return only valid JSON with exactly ${expected} items.`, `Invalid response:\n${raw.slice(0, 12_000)}\n\nValidation error: ${firstError instanceof Error ? firstError.message : String(firstError)}`, context.signal);
+        try { outline = parseOutlineBatch(raw, expected); }
+        catch (secondError) { console.error(`[month-plan] outline batch ${batch + 1} unparseable. First error: ${firstError instanceof Error ? firstError.message : firstError}. Raw start: ${JSON.stringify(raw.slice(0, 600))}`); throw secondError; }
+      }
+      const start = new Date(String(context.assertActive().payload.start || initial.createdAt));
+      for (const [itemIndex, item] of dedupeOutlineTitles(outline.slice(existing.length), used).entries()) {
+        context.assertActive(); const index = offset + existing.length + itemIndex; const date = new Date(start); date.setDate(date.getDate() + index); date.setHours(9 + index % 8, 0, 0, 0);
+        const input = { channel: item.channel, title: item.title, body: project.language === 'es' ? 'Escribiendo…' : 'Writing…', metadata: { monthlyPlan: true, monthJobId: initial.id, outlineBatch: batch, topic: item.topic, angle: item.angle, plannedAt: date.toISOString(), needsBody: true, writing: false, sources: [] } };
+        const outcome = await actions.runAction({ actor: 'month-planner', action: 'create_draft', params: { projectId: project.id, agentId: 'month-planner', output: input }, summary: `Plan: ${input.title}`, apply: () => store.createDraft(project.id, 'month-planner', input) });
+        if (!outcome.result) throw new AppError('Monthly plan draft creation requires approval in Rules', 409);
+      }
+      offset += expected;
+    }
+
+    while (true) {
+      context.assertActive(); const all = store.listDrafts(project.id).filter((draft) => draft.metadata.monthJobId === initial.id);
+      const remaining = all.filter((draft) => draft.metadata.needsBody);
+      if (!remaining.length) break;
+      const fresh = context.assertActive(); const preferred = (Array.isArray(fresh.payload.priorityDraftIds) ? fresh.payload.priorityDraftIds.map(String) : []).filter((id) => remaining.some((draft) => draft.id === id));
+      const selected = preferred.map((id) => remaining.find((draft) => draft.id === id)).find(Boolean) || remaining.sort((a, b) => String(a.metadata.plannedAt).localeCompare(String(b.metadata.plannedAt)))[0];
+      const nextPreferred = preferred.filter((id) => id !== selected.id);
+      const completed = all.length - remaining.length;
+      context.update({ total: all.length, progress: completed, message: project.language === 'es' ? 'Escribiendo tu plan' : 'Writing your plan', payload: { ...fresh.payload, currentDraftId: selected.id, priorityDraftIds: nextPreferred } });
+      await writeDraftBody(initial.id, selected.id, context);
+      const done = store.listDrafts(project.id).filter((draft) => draft.metadata.monthJobId === initial.id && !draft.metadata.needsBody).length;
+      context.update({ progress: done, message: project.language === 'es' ? 'Escribiendo tu plan' : 'Writing your plan', payload: { ...context.assertActive().payload, currentDraftId: '' } });
+    }
+  }, config.llmMaxConcurrency);
+  worker.start();
 
   app.onError((error, c) => {
     const status = error instanceof AppError ? error.status : 500;
@@ -142,7 +241,7 @@ export function createApp({ store, llm, config, fetcher = fetch, publicDir = pat
     await next();
   });
 
-  app.get('/api/health', (c) => c.json({ ok: store.integrityStatus === 'ok', version: '0.5.0', integrity: store.integrityStatus }));
+  app.get('/api/health', (c) => c.json({ ok: store.integrityStatus === 'ok', version: '0.6.0', integrity: store.integrityStatus }));
   app.get('/api/settings', (c) => {
     const stored = store.getSettings();
     const extras = Object.fromEntries(settingKeys.filter((key) => !secretSettingKeys.has(key) && stored[key] !== undefined).map((key) => [key, stored[key]]));
@@ -232,22 +331,11 @@ export function createApp({ store, llm, config, fetcher = fetch, publicDir = pat
   });
 
   app.post('/api/projects/:id/strategy', async (c) => {
-    const execute = async (send?: (event: string, data: unknown) => void) => {
-      const project = store.getProject(c.req.param('id'));
-      if (!project.url) throw new AppError('Project URL is required to build a strategy');
-      send?.('progress', { message: 'Fetching and reading the website…' });
-      const page = await fetchPage(project.url, fetcher, config.allowPrivateFetch);
-      send?.('progress', { message: 'Building the strategy with the LLM…' });
-      const strategy = await currentLLM('strategy').complete(
-        `You are a pragmatic chief marketing officer. Write in ${project.language === 'es' ? 'Spanish' : 'English'}. Build a concise strategy grounded only in supplied information. Use Markdown sections: Positioning, Ideal customer profile, Keyword themes, Competitors to investigate, and Recommended channels. Clearly label assumptions.`,
-        `Project: ${JSON.stringify(project)}\n\nWebsite text:\n${page.text}`,
-      );
-      const updated = store.setStrategy(project.id, strategy);
-      send?.('result', { project: updated });
-      return updated;
-    };
-    if (c.req.query('stream') === '1') return sse(async (send) => { send('progress', { message: 'Starting…' }); await execute(send); });
-    return c.json({ project: await execute() });
+    const project = store.getProject(c.req.param('id')); if (!project.url) throw new AppError('Project URL is required to build a strategy');
+    if (actions.isPaused()) throw new AppError('Agents are paused by Stop all', 409);
+    const job = store.createJob(project.id, 'strategy', { message: 'Strategy queued', total: 1 }); worker.announce(job); worker.wake();
+    if (c.req.query('stream') === '1') return sse(async (send) => { send('result', { job }); });
+    return c.json({ job, estimate: jobEstimate('strategy', store.llmStats().tokensPerSecond) }, 202);
   });
 
   app.get('/api/agents', (c) => c.json({ agents: agentDefinitions.map(({ systemPrompt: _hidden, ...agent }) => agent) }));
@@ -358,6 +446,14 @@ export function createApp({ store, llm, config, fetcher = fetch, publicDir = pat
 
   app.post('/api/onboarding/run', async (c) => {
     const body = await jsonBody(c);
+    if (c.req.query('stream') === '1') {
+      const url = textField(body.url); if (!url) throw new AppError('url is required');
+      const existing = store.findProjectByUrl(url); if (existing) throw new AppError('A project for this website already exists', 409, { code: 'duplicate_project', project: existing });
+      const language = textField(body.language) === 'es' ? 'es' : 'en'; const supplied = body.profile && typeof body.profile === 'object' ? body.profile as Record<string, unknown> : {};
+      const project = store.createProject({ name: textField(supplied.name) || new URL(url).hostname, url, description: textField(supplied.description), audience: textField(supplied.audience), tone: textField(supplied.tone), language });
+      const job = store.createJob(project.id, 'onboarding', { total: 3, message: language === 'es' ? 'Análisis en cola' : 'Analysis queued', payload: { stage: 'health' } }); worker.announce(job); worker.wake();
+      return sse(async (send) => { send('result', { project, health: null, drafts: [], job }); });
+    }
     const execute = async (send?: (event: string, data: unknown) => void) => {
       const url = textField(body.url); if (!url) throw new AppError('url is required');
       const existing = store.findProjectByUrl(url); if (existing) throw new AppError('A project for this website already exists', 409, { code: 'duplicate_project', project: existing });
@@ -386,7 +482,6 @@ export function createApp({ store, llm, config, fetcher = fetch, publicDir = pat
       send?.('result', { project, health, drafts });
       return { project, health, drafts };
     };
-    if (c.req.query('stream') === '1') return sse(async (send) => { send('progress', { step: 'start', message: 'Starting…' }); await execute(send); });
     return c.json(await execute(), 201);
   });
 
@@ -410,7 +505,11 @@ export function createApp({ store, llm, config, fetcher = fetch, publicDir = pat
 
   app.get('/api/policy', (c) => c.json({ policy: actions.getPolicy(), defaults: defaultPolicy, floor: [...actionFloor], paused: actions.isPaused(), approvals: store.listApprovals(), activity: actions.activity() }));
   app.put('/api/policy', async (c) => c.json({ policy: actions.setPolicy(await jsonBody(c)) }));
-  app.post('/api/agents/stop', async (c) => { const body = await jsonBody(c); return c.json({ paused: actions.stop(body.paused !== false) }); });
+  app.post('/api/agents/stop', async (c) => {
+    const body = await jsonBody(c); const paused = actions.stop(body.paused !== false);
+    if (paused) for (const job of store.listJobs().filter((item) => ['queued', 'running'].includes(item.status))) worker.cancel(job.id);
+    return c.json({ paused });
+  });
   app.post('/api/approvals/:id/:decision', async (c) => {
     const approve = c.req.param('decision') === 'approve'; if (!approve && c.req.param('decision') !== 'reject') throw new AppError('Invalid decision');
     await actions.decide(c.req.param('id'), approve, {
@@ -432,16 +531,36 @@ export function createApp({ store, llm, config, fetcher = fetch, publicDir = pat
   app.post('/api/projects/:id/month-plan', async (c) => {
     const project = store.getProject(c.req.param('id'));
     if (actions.isPaused()) throw new AppError('Agents are paused by Stop all', 409);
-    const chunks = searchKnowledge(store.listKnowledgeChunks(project.id), `${project.name} ${project.strategy || ''}`, { k: 6 });
-    const raw = await currentLLM('month-plan').complete(`You are a practical content planner. Return only a JSON array of exactly 30 objects with keys: topic, title, channel, angle, body. Allowed channels: blog, linkedin, x, newsletter. Write in ${project.language === 'es' ? 'Spanish' : 'English'}. Respect X 280 and LinkedIn 1300 character limits. Vary formats, avoid clichés and invented facts.`, `Project: ${JSON.stringify(project)}\n${formatKnowledgeData(chunks)}`);
-    const created: Draft[] = [];
-    for (const input of monthPlan(project, raw)) {
-      input.metadata = { ...input.metadata, sources: chunks.map((chunk, index) => ({ label: `K${index + 1}`, title: chunk.title, chunkId: chunk.id, documentId: chunk.documentId })) };
-      const outcome = await actions.runAction({ actor: 'month-planner', action: 'create_draft', params: { projectId: project.id, agentId: 'month-planner', output: input }, summary: `Plan: ${input.title}`, apply: () => store.createDraft(project.id, 'month-planner', input) });
-      if (outcome.result) created.push(outcome.result);
+    if (project.isDemo) {
+      const created = monthPlan(project, '').map((input) => store.createDraft(project.id, 'month-planner', { ...input, metadata: { ...input.metadata, sources: [{ label: 'K1', title: 'Luna Studio brand guide' }] } }));
+      return c.json({ drafts: created, job: null }, 201);
     }
-    return c.json({ drafts: created, approvalRequired: created.length === 0 }, created.length ? 201 : 202);
+    const active = store.listJobs(project.id).find((job) => job.kind === 'month-plan' && ['queued', 'running'].includes(job.status));
+    if (active) return c.json({ job: active, estimate: jobEstimate('month-plan', store.llmStats().tokensPerSecond) }, 202);
+    const job = store.createJob(project.id, 'month-plan', { total: 30, message: 'Monthly plan queued', payload: { start: new Date().toISOString(), priorityDraftIds: [] } }); worker.announce(job); worker.wake();
+    return c.json({ job, drafts: [], estimate: jobEstimate('month-plan', store.llmStats().tokensPerSecond) }, 202);
   });
+
+  app.get('/api/estimate', (c) => c.json({ estimate: jobEstimate(c.req.query('kind') || 'strategy', store.llmStats().tokensPerSecond) }));
+  app.get('/api/projects/:id/estimate', (c) => { store.getProject(c.req.param('id')); return c.json({ estimate: jobEstimate(c.req.query('kind') || 'strategy', store.llmStats().tokensPerSecond) }); });
+  app.get('/api/jobs', (c) => c.json({ jobs: store.listJobs(c.req.query('project')) }));
+  app.get('/api/jobs/stream', (c) => {
+    const projectId = c.req.query('project'); const encoder = new TextEncoder(); let cleanup = () => {}; let cleaned = false;
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        let open = true;
+        const send = (event: string, data: unknown) => { if (!open) return; try { controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`)); } catch { open = false; cleanup(); } };
+        send('jobs', { jobs: store.listJobs(projectId) });
+        const unsubscribe = worker.subscribe((event) => { if (!projectId || event.job.projectId === projectId) send(event.type, event.type === 'token' ? { job: event.job, token: event.token } : { job: event.job }); });
+        const heartbeat = setInterval(() => send('ping', { at: Date.now() }), 15_000);
+        cleanup = () => { if (cleaned) return; cleaned = true; open = false; clearInterval(heartbeat); unsubscribe(); };
+      },
+      cancel() { cleanup(); },
+    });
+    return new Response(stream, { headers: { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', connection: 'keep-alive' } });
+  });
+  app.post('/api/jobs/:id/cancel', (c) => c.json({ job: worker.cancel(c.req.param('id')) }));
+  app.post('/api/jobs/:id/retry', (c) => { const job = store.retryJob(c.req.param('id')); worker.announce(job); worker.wake(); return c.json({ job }); });
 
   app.get('/api/drafts', (c) => c.json({ drafts: store.listDrafts(c.req.query('project'), c.req.query('status')).map((draft) => ({ ...draft, quality: draftQuality(draft.channel, draft.body) })) }));
   app.patch('/api/drafts/:id', async (c) => {
@@ -460,6 +579,18 @@ export function createApp({ store, llm, config, fetcher = fetch, publicDir = pat
     const rewritten = await currentLLM('draft-regenerate').complete(`Rewrite marketing copy in ${project.language === 'es' ? 'Spanish' : 'English'}. Preserve verified facts and any [K#] citations. Respect the channel format and hard limits. Return only the rewritten body.`, `Channel: ${draft.channel}\nFeedback: ${feedback}\n\nCurrent draft:\n${draft.body}`);
     const updated = store.updateDraft(draft.id, { body: rewritten });
     return c.json({ draft: { ...updated, quality: draftQuality(updated.channel, updated.body) } });
+  });
+  app.post('/api/drafts/:id/write-now', (c) => {
+    const draft = store.getDraft(c.req.param('id')); if (!draft.metadata.needsBody) throw new AppError('This draft already has a body', 409);
+    const parentId = String(draft.metadata.monthJobId || ''); let job = parentId ? store.getJob(parentId) : undefined;
+    if (job && ['running', 'queued'].includes(job.status)) {
+      const priorities = Array.isArray(job.payload.priorityDraftIds) ? job.payload.priorityDraftIds.map(String).filter((id) => id !== draft.id) : [];
+      job = store.updateJob(job.id, { payload: { ...job.payload, priorityDraftIds: [draft.id, ...priorities] }, priority: job.priority + 1, message: 'Priority draft queued next' });
+    } else if (job && ['failed', 'cancelled'].includes(job.status)) {
+      const priorities = Array.isArray(job.payload.priorityDraftIds) ? job.payload.priorityDraftIds.map(String).filter((id) => id !== draft.id) : [];
+      store.updateJob(job.id, { payload: { ...job.payload, priorityDraftIds: [draft.id, ...priorities] } }); job = store.retryJob(job.id);
+    } else job = store.createJob(draft.projectId, 'draft-body', { total: 1, message: 'Priority draft queued', priority: 100, payload: { draftId: draft.id } });
+    worker.announce(job); worker.wake(); return c.json({ job }, 202);
   });
   app.post('/api/drafts/:id/schedule', async (c) => {
     const body = await jsonBody(c);

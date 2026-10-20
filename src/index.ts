@@ -18,7 +18,7 @@ const publicDir = fileURLToPath(new URL('../public', import.meta.url));
 const app = createApp({ store, config, publicDir });
 
 const server = serve({ fetch: app.fetch, port: config.port, hostname: config.host }, (info) => {
-  console.log(`OpenCMO v0.5 running at http://${config.host}:${info.port}`);
+  console.log(`OpenCMO v0.6 running at http://${config.host}:${info.port}`);
 });
 server.on('error', (error) => {
   console.error(`OpenCMO could not start: ${error.message}`);

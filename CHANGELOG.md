@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.6.0
+
+- Added persistent background jobs with restart recovery, serialized LLM work, live SSE progress, cancellation, retry, and a persistent UI progress chip.
+- Split monthly planning into four compact outline batches followed by one bounded, knowledge-grounded body call per draft; placeholders appear on the calendar immediately and can be prioritized individually.
+- Added robust outline JSON extraction/repair with one retry per batch, duplicate-title prevention, and partial-result preservation on failure.
+- Moved strategy and first-run strategy generation into background jobs, capped strategy output at roughly 450 words, and streamed strategy tokens into the UI.
+- Added rolling tokens-per-second estimates, long-run warnings, and an optional fast model for monthly draft bodies.
+- Prevented drafts with unfinished bodies from being approved, scheduled, bulk-approved, or published.
+
 ## 0.5.0
 
 - Added offline, print-ready white-label client reports with configurable agency name, accent color, logo, and optional “Powered by OpenCMO”.

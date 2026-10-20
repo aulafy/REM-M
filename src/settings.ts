@@ -1,7 +1,7 @@
 import type { Config } from './config.js';
 
 export const settingKeys = [
-  'llmBaseUrl', 'llmModel', 'llmApiKey', 'llmTimeoutMs',
+  'llmBaseUrl', 'llmModel', 'llmFastModel', 'llmApiKey', 'llmTimeoutMs',
   'wordpressUrl', 'wordpressUsername', 'wordpressPassword',
   'githubToken', 'githubRepo', 'githubBranch',
   'webhookUrl', 'webhookSecret',
