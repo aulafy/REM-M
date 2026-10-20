@@ -59,7 +59,7 @@ function facts() {
     approvedCount: drafts.filter((d) => d.status === 'approved' || d.status === 'published').length,
     publishedOrScheduled: drafts.some((d) => d.status === 'published' || d.scheduledAt),
     copied: !!project && store.get(`ocmo_copied_${id}`) === '1',
-    monthPlanStarted: state.jobs.some((job) => job.kind === 'month-plan') || drafts.some((d) => d.metadata?.monthlyPlan),
+    monthPlanStarted: state.jobs.some((job) => job.kind === 'month-plan' && job.status !== 'failed' && job.status !== 'cancelled') || (!state.jobs.some((job) => job.kind === 'month-plan') && drafts.some((d) => d.metadata?.monthlyPlan)),
     monthSkipped: !!project && store.get(`ocmo_month_skip_${id}`) === '1',
   };
 }
@@ -154,8 +154,25 @@ function stepPublish() {
 function stepMonth() {
   const job = state.jobs.find((j) => j.kind === 'month-plan' && (j.status === 'running' || j.status === 'queued'));
   if (job || facts().monthPlanStarted) return `<div class="notice ok">${esc(tr('month.started'))}</div>`;
+  const failedMonth = state.jobs.filter((j) => j.kind === 'month-plan').sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))[0];
+  if (failedMonth && failedMonth.status === 'failed') return `<div class="notice bad">${esc(tr('month.failed'))}<details><summary>${esc(tr('tech.details'))}</summary><pre>${esc(failedMonth.error || '')}</pre></details></div><div class="row"><button class="btn big" data-act="retry-month" data-id="${esc(failedMonth.id)}">${esc(tr('btn.retryMonth'))}</button><button class="btn secondary" data-act="skip-month">${esc(tr('btn.skip'))}</button></div>`;
   const e = state.estimate; const time = e ? formatDuration(e.totalSeconds, lang) : '…';
   return `<p>${esc(tr('month.help'))}</p><p class="hint">${esc(tr('month.estimate', { time }))}</p><div class="row"><button class="btn big" data-act="make-month">${esc(tr('btn.createPlan'))}</button><button class="btn secondary" data-act="skip-month">${esc(tr('btn.skip'))}</button></div>${errorBox('month')}`;
+}
+
+
+function calendarHtml() {
+  const items = state.drafts.filter((d) => d.channel !== 'briefing' && d.status !== 'rejected').map((d) => ({ d, at: d.scheduledAt || d.metadata?.plannedAt || null })).filter((x) => x.at && !Number.isNaN(Date.parse(x.at))).sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
+  if (!items.length) return `<section class="calendar"><h2>${esc(tr('cal.title'))}</h2><p class="hint">${esc(tr('cal.empty'))}</p></section>`;
+  const weekStart = (iso) => { const date = new Date(iso); const day = (date.getDay() + 6) % 7; date.setDate(date.getDate() - day); date.setHours(0, 0, 0, 0); return date; };
+  const groups = new Map(); for (const item of items) { const key = weekStart(item.at).getTime(); if (!groups.has(key)) groups.set(key, []); groups.get(key).push(item); }
+  const label = { writing: tr('cal.writing'), pending: tr('cal.review'), approved: tr('cal.approved'), published: tr('cal.published') };
+  const html = [...groups.entries()].map(([key, list]) => `<div class="week"><h3>${esc(tr('cal.week', { date: new Date(key).toLocaleDateString(lang, { day: 'numeric', month: 'short' }) }))}</h3>${list.map(({ d, at }) => {
+    const status = d.metadata?.needsBody ? 'writing' : d.status; const date = new Date(at).toLocaleDateString(lang, { weekday: 'short', day: 'numeric', month: 'short' });
+    const action = status === 'pending' ? `<button class="btn secondary small" data-act="review-this" data-id="${esc(d.id)}">${esc(tr('cal.btnReview'))}</button>` : status === 'approved' ? `<button class="btn secondary small" data-act="copy-cal" data-id="${esc(d.id)}">${esc(tr('cal.btnCopy'))}</button>` : '';
+    return `<div class="cal-item"><time>${esc(date)}</time><div class="cal-main"><b>${esc(d.title)}</b><small>${esc(tr(`channel.${channelKey(d.channel)}`))}</small></div><span class="status ${esc(status)}">${esc(label[status] || status)}</span>${action}</div>`;
+  }).join('')}</div>`).join('');
+  return `<section class="calendar" id="calendar"><h2>${esc(tr('cal.title'))}</h2><p class="hint">${esc(tr('cal.help'))} ${esc(tr('cal.count', { n: items.length }))}</p>${html}</section>`;
 }
 
 const RENDERERS = { ai: stepAi, business: stepBusiness, understood: stepUnderstood, posts: stepPosts, review: stepReview, publish: stepPublish, month: stepMonth };
@@ -175,7 +192,7 @@ function render() {
     return `<section class="step ${s.status}" id="step-${s.id}" aria-current="${s.status === 'current' ? 'step' : 'false'}">${head}${body}</section>`;
   }).join('');
   const finale = allDone ? `<div class="step current"><div class="celebrate"><div class="big-emoji"><svg viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></svg></div><h2>${esc(tr('done.title'))}</h2><p>${esc(tr('done.text'))}</p></div></div>` : '';
-  app.innerHTML = `${banner}<div class="hero"><h1>${esc(tr('plan.title'))}</h1><p>${esc(tr('plan.intro'))}</p><div class="progress" role="progressbar" aria-valuenow="${plan.doneCount}" aria-valuemin="0" aria-valuemax="${plan.total}"><div class="bar"><i style="width:${pct}%"></i></div><b>${esc(tr('plan.done', { done: plan.doneCount, total: plan.total }))}</b></div></div>${finale}${stepsHtml}<p class="hint" style="text-align:center">${esc(tr('safe.note'))}</p>`;
+  app.innerHTML = `${banner}<div class="hero"><h1>${esc(tr('plan.title'))}</h1><p>${esc(tr('plan.intro'))}</p><div class="progress" role="progressbar" aria-valuenow="${plan.doneCount}" aria-valuemin="0" aria-valuemax="${plan.total}"><div class="bar"><i style="width:${pct}%"></i></div><b>${esc(tr('plan.done', { done: plan.doneCount, total: plan.total }))}</b></div></div>${finale}${stepsHtml}${calendarHtml()}<p class="hint" style="text-align:center">${esc(tr('safe.note'))}</p>`;
   updatePill(); bind(); if (currentIdx >= 0 && state.scrollTo !== undefined && state.scrollTo !== plan.current) $(`#step-${plan.current}`)?.scrollIntoView({ block: 'start', behavior: 'smooth' });
   state.scrollTo = plan.current;
 }
@@ -257,6 +274,9 @@ async function act(target) {
     else if (action === 'copy') { const d = state.drafts.find((x) => x.id === id); await navigator.clipboard.writeText(['linkedin', 'x'].includes(d.channel) ? plainText(d.body) : plainText(dropDuplicateTitle(d.title, d.body))); store.set(`ocmo_copied_${state.project.id}`, '1'); target.textContent = tr('btn.copied'); setTimeout(render, 900); }
     else if (action === 'schedule') { const when = new Date(); when.setDate(when.getDate() + 1); when.setHours(9, 0, 0, 0); await api(`/api/drafts/${id}/schedule`, { method: 'POST', body: JSON.stringify({ scheduledAt: when.toISOString() }) }); await refreshProjectData(); toast(tr('step.publish.short')); render(); }
     else if (action === 'make-month') { await api(`/api/projects/${state.project.id}/month-plan`, { method: 'POST', body: '{}' }); await refreshProjectData(); render(); startPolling(); }
+    else if (action === 'retry-month') { await api(`/api/jobs/${id}/retry`, { method: 'POST', body: '{}' }); await refreshProjectData(); render(); startPolling(); }
+    else if (action === 'review-this') { const queue = state.drafts.filter((d) => isWritten(d) && d.status === 'pending').sort(reviewOrder); const at = queue.findIndex((d) => d.id === id); if (at >= 0) state.reviewIdx = at; state.open = 'review'; render(); document.querySelector('#step-review')?.scrollIntoView({ block: 'start', behavior: 'smooth' }); }
+    else if (action === 'copy-cal') { const d = state.drafts.find((x) => x.id === id); await navigator.clipboard.writeText(['linkedin', 'x'].includes(d.channel) ? plainText(d.body) : plainText(dropDuplicateTitle(d.title, d.body))); store.set(`ocmo_copied_${state.project.id}`, '1'); toast(tr('btn.copied')); }
     else if (action === 'skip-month') { store.set(`ocmo_month_skip_${state.project.id}`, '1'); render(); }
     else if (action === 'toggle-step') { state.open = state.open === id ? null : id; render(); }
   } catch (error) { const stepId = { 'use-local': 'ai', 'use-online': 'ai', demo: 'ai', approve: 'review', discard: 'review', rewrite: 'review', copy: 'publish', schedule: 'publish', 'make-month': 'month' }[action] || 'review'; fail(stepId, error); }
