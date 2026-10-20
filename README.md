@@ -23,7 +23,7 @@ ollama serve
 
 Change `LLM_BASE_URL`, `LLM_API_KEY`, and `LLM_MODEL` in `.env` to use another compatible provider. `LLM_TIMEOUT_MS` controls the request timeout and defaults to 300000 (five minutes), which is useful for slower local models; it can also be changed in Settings. Project data is stored in `data/opencmo.sqlite`. Markdown publications go to `exports/` by default.
 
-## What v0.2 includes
+## What v0.3 includes
 
 - URL onboarding and an LLM-generated strategy covering positioning, ICP, keyword themes, competitors to investigate, and channels
 - Writer, SEO, GEO, Reddit, X, LinkedIn, Newsletter, and HN/Product Hunt launch agents
@@ -35,6 +35,9 @@ Change `LLM_BASE_URL`, `LLM_API_KEY`, and `LLM_MODEL` in `.env` to use another c
 - Browser settings with masked credentials, streamed run progress, GEO score history, and English/Spanish project output
 - An approved-content calendar with automatic due publishing, edit history, bulk review, shortcuts, dark mode, and mobile layouts
 - SSRF protection, basic API rate limiting, Docker support, and Node 20/22 CI
+- Per-project brand knowledge with Spanish-aware BM25 retrieval, optional OpenAI-compatible embeddings, reciprocal-rank fusion, quoted-data prompt boundaries, and citations
+- A code-enforced action policy floor, approval queue, append-only activity log, and global agent kill switch
+- Prompt-free LLM telemetry, an hourly call cap, guarded/robots-aware website profiling, daily read-only briefs, automatic and manual SQLite backups, startup integrity checks, and optional local Hindsight memory
 
 GEO results are a directional sample from the configured model, not proof of visibility across commercial AI search products. Reddit replies are never posted automatically. The WordPress connector publishes posts immediately only after the corresponding OpenCMO draft has been approved.
 
@@ -74,6 +77,11 @@ POST /api/drafts/:id/reject
 POST /api/drafts/:id/schedule
 POST /api/drafts/:id/publish             { "connector": "markdown" }
 GET  /api/connectors
+GET/POST /api/projects/:id/knowledge
+POST /api/projects/:id/knowledge/import-site
+GET/PUT /api/policy
+POST /api/agents/stop
+GET/POST /api/backups
 ```
 
 Example:
@@ -98,6 +106,12 @@ approval state machine ─── scheduler/connector ─── Markdown / WordPr
 ```
 
 The Hono app is assembled in `src/app.ts`; dependencies such as the LLM and `fetch` are injectable. `src/db.ts` owns the SQLite schema and draft state machine. Agent implementations live in `src/agents.ts`, deterministic web analysis in `src/web.ts`, and publisher adapters in `src/connectors.ts`.
+
+### Security model
+
+Agent-created side effects pass through one action-policy gate. The hard floor permanently prevents agents from publishing without approval, deleting or exporting data, changing settings or policy, and connecting channels. Retrieved knowledge and optional memory are explicitly delimited as untrusted data, never instructions. Website reads allow only HTTP(S), resolve and reject private addresses before every redirect, impose redirect/time/size limits, use a polite user agent, and honor robots.txt. Publishing still requires a human-approved draft.
+
+The v0.3 design ports useful ideas from REM-L (MIT, same author), including its compact RAG, policy/review boundary, LLM metrics, safe web profiling, brief scheduler, backup lifecycle, and optional Hindsight boundary. The implementation is native to OpenCMO's TypeScript/Hono/SQLite architecture; invoicing, tax, and macOS-specific parts were intentionally excluded.
 
 ## Development
 

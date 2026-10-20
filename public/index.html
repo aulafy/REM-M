@@ -34,14 +34,22 @@
       <div id="workspace" hidden>
         <div class="tabs" role="tablist">
           <button class="tab active" data-tab="strategy">Strategy</button>
+          <button class="tab" data-tab="knowledge">Knowledge</button>
           <button class="tab" data-tab="agents">Agents</button>
           <button class="tab" data-tab="inbox">Inbox <span id="pending-count" class="count">0</span></button>
           <button class="tab" data-tab="calendar">Calendar</button>
+          <button class="tab" data-tab="policy">Policy</button>
         </div>
 
         <section id="strategy" class="panel active">
           <div class="panel-heading"><div><h2>Marketing strategy</h2><p>Grounded in your website and business details.</p></div><button id="generate-strategy" class="primary">Generate strategy</button></div>
           <article id="strategy-content" class="card prose muted">No strategy yet. Generate one after configuring your local LLM.</article>
+        </section>
+
+        <section id="knowledge" class="panel">
+          <div class="panel-heading"><div><h2>Brand knowledge</h2><p>Agents quote relevant chunks as data and cite them in their drafts.</p></div><button id="import-site" class="secondary">Import from my site</button></div>
+          <form id="knowledge-form" class="card run-box"><label>Title <input name="title" required placeholder="Brand guide"></label><label>Paste text or choose a .md/.txt file <textarea name="text" id="knowledge-text" required></textarea><input id="knowledge-file" type="file" accept=".md,.txt,text/plain,text/markdown"></label><button class="primary" type="submit">Add document</button></form>
+          <div id="knowledge-list"></div>
         </section>
 
         <section id="agents" class="panel">
@@ -67,6 +75,14 @@
           <div class="panel-heading"><div><h2>Content calendar</h2><p>Approved drafts scheduled for automatic publishing.</p></div></div>
           <div id="calendar-list"></div>
         </section>
+
+        <section id="policy" class="panel">
+          <div class="panel-heading"><div><h2>Action policy</h2><p>The hard safety floor cannot be relaxed by settings.</p></div><button id="stop-agents" class="danger">Stop all</button></div>
+          <div id="policy-floor" class="card floor"></div>
+          <form id="policy-form" class="card policy-grid"></form>
+          <h3>Pending approvals</h3><div id="approval-list"></div>
+          <h3>Activity log</h3><div id="activity-list" class="card activity-list"></div>
+        </section>
       </div>
     </main>
   </div>
@@ -76,6 +92,7 @@
       <div class="dialog-title"><h2>New project</h2><button type="button" class="icon" data-close aria-label="Close">×</button></div>
       <label>Business name <input name="name" required placeholder="Acme Studio"></label>
       <label>Website URL <input name="url" type="url" placeholder="https://example.com"></label>
+      <button id="profile-site" type="button" class="secondary">Read website and prefill</button>
       <label>Description <textarea name="description" placeholder="What does the business offer?"></textarea></label>
       <div class="two"><label>Audience <input name="audience" placeholder="Small design teams"></label><label>Tone <input name="tone" placeholder="Clear and practical"></label></div>
       <div class="two"><label>Language <select name="language" id="project-language"><option value="en">English</option><option value="es">Español</option></select></label><label>Competitors <input name="competitors" placeholder="Competitor A, Competitor B"></label></div>
@@ -85,11 +102,14 @@
   <dialog id="settings-dialog">
     <form id="settings-form">
       <div class="dialog-title"><h2>Settings</h2><button type="button" class="icon" data-close-settings aria-label="Close">×</button></div>
-      <fieldset><legend>LLM</legend><label>Base URL <input name="llmBaseUrl" type="url"></label><div class="two"><label>Model <input name="llmModel"></label><label>API key <input name="llmApiKey" type="password"></label></div><label>Request timeout (milliseconds) <input name="llmTimeoutMs" type="number" min="1" step="1000"></label><button id="test-llm" type="button" class="secondary">Test LLM connection</button></fieldset>
+      <fieldset><legend>LLM</legend><label>Base URL <input name="llmBaseUrl" type="url"></label><div class="two"><label>Model <input name="llmModel"></label><label>API key <input name="llmApiKey" type="password"></label></div><div class="two"><label>Request timeout (milliseconds) <input name="llmTimeoutMs" type="number" min="1" step="1000"></label><label>Maximum calls/hour <input name="llmMaxPerHour" type="number" min="1" value="60"></label></div><label><input class="inline-check" name="ragEmbeddings" type="checkbox" value="1"> Fuse optional embeddings with BM25</label><label>Embedding model <input name="embeddingModel" placeholder="nomic-embed-text"></label><div id="llm-stats" class="stats"></div><button id="test-llm" type="button" class="secondary">Test LLM connection</button></fieldset>
+      <fieldset><legend>Daily briefs</legend><label><input class="inline-check" name="briefsEnabled" type="checkbox" value="1" checked> Enable morning/evening briefs</label><label><input class="inline-check" name="briefTelegram" type="checkbox" value="1"> Notify configured Telegram chat</label><div class="two"><label>Morning time <input name="morningBriefTime" type="time" value="08:00"></label><label>Evening time <input name="eveningBriefTime" type="time" value="18:00"></label></div></fieldset>
+      <fieldset><legend>Long-term memory (optional)</legend><label><input class="inline-check" name="hindsightEnabled" type="checkbox" value="1"> Enable Hindsight</label><label>Local Hindsight URL <input name="hindsightUrl" type="url" value="http://127.0.0.1:8888"></label></fieldset>
       <fieldset><legend>WordPress</legend><label>URL <input name="wordpressUrl" type="url"></label><div class="two"><label>Username <input name="wordpressUsername"></label><label>Application password <input name="wordpressPassword" type="password"></label></div></fieldset>
       <fieldset><legend>GitHub</legend><label>Token <input name="githubToken" type="password"></label><div class="two"><label>Repository <input name="githubRepo" placeholder="owner/repo"></label><label>Branch <input name="githubBranch"></label></div></fieldset>
       <fieldset><legend>Webhooks</legend><label>Generic webhook URL <input name="webhookUrl" type="url"></label><label>Webhook secret <input name="webhookSecret" type="password"></label><label>Discord webhook URL <input name="discordWebhookUrl" type="url"></label></fieldset>
       <fieldset><legend>Telegram</legend><div class="two"><label>Bot token <input name="telegramBotToken" type="password"></label><label>Chat ID <input name="telegramChatId"></label></div></fieldset>
+      <fieldset><legend>Backups & integrity</legend><p id="integrity-status"></p><div id="backup-list"></div><button id="create-backup" type="button" class="secondary">Create backup now</button></fieldset>
       <button class="primary wide" type="submit">Save settings</button>
     </form>
   </dialog>

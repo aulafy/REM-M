@@ -7,9 +7,15 @@ import { createConnectors } from './connectors.js';
 import { Store } from './db.js';
 import { AppError } from './errors.js';
 import { OpenAICompatibleLLM } from './llm.js';
+import { ObservedLLM } from './observability.js';
 import { effectiveConfig, publicSettings, secretSettingKeys, settingKeys } from './settings.js';
-import { fetchPage } from './web.js';
+import { extractWebsiteProfile, fetchPage, validateProfileDraft } from './web.js';
 import type { Draft, LLM } from './types.js';
+import { chunkText, fetchEmbedding, formatKnowledgeData, searchKnowledge } from './rag.js';
+import { ActionRunner, actionFloor, defaultPolicy } from './policy.js';
+import { BackupManager } from './backups.js';
+import { HindsightMemory } from './hindsight.js';
+import { briefIsDue, buildBrief } from './briefs.js';
 
 export interface AppDependencies {
   store: Store;
@@ -68,9 +74,29 @@ export async function publishDraft(store: Store, config: Config, fetcher: typeof
 }
 
 export async function publishDueDrafts(store: Store, config: Config, fetcher: typeof fetch = fetch): Promise<void> {
+  const actions = new ActionRunner(store, store.filename === ':memory:' ? undefined : config.dataDir);
   for (const draft of store.listDueDrafts()) {
-    try { await publishDraft(store, config, fetcher, draft, draft.scheduledConnector!); }
+    try { await actions.runAction({ actor: 'scheduler', action: 'publish', params: { draftId: draft.id, connector: draft.scheduledConnector }, summary: `Publish scheduled draft: ${draft.title}`, apply: () => publishDraft(store, config, fetcher, draft, draft.scheduledConnector!) }); }
     catch (error) { console.error(`Scheduled publication failed for ${draft.id}:`, error); }
+  }
+}
+
+export async function runMaintenance(store: Store, config: Config, fetcher: typeof fetch = fetch, now = new Date()): Promise<void> {
+  await publishDueDrafts(store, config, fetcher);
+  if (store.filename !== ':memory:') { try { new BackupManager(store, config.dataDir).tick(); } catch (error) { console.error('Daily backup failed:', error); } }
+  const settings = store.getSettings(); const actions = new ActionRunner(store, store.filename === ':memory:' ? undefined : config.dataDir);
+  for (const project of store.listProjects()) for (const period of ['morning', 'evening'] as const) {
+    const lastKey = `briefLast${period}:${project.id}`;
+    if (!briefIsDue({ ...settings, [`briefLast${period}`]: settings[lastKey] || '' }, period, now)) continue;
+    const draftInput = buildBrief(store, project.id, period, now);
+    const outcome = await actions.runAction({ actor: `${period}-agent`, action: 'write_briefing', params: { projectId: project.id, period }, summary: draftInput.title, apply: () => store.createDraft(project.id, `${period}-brief`, draftInput) });
+    store.setSettings({ [lastKey]: now.toLocaleDateString('sv-SE') });
+    if (outcome.decision === 'proceed') {
+      const cfg = effectiveConfig(config, store.getSettings());
+      if (cfg.telegram.botToken && cfg.telegram.chatId && store.getSettings().briefTelegram === '1') {
+        await fetcher(`https://api.telegram.org/bot${cfg.telegram.botToken}/sendMessage`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ chat_id: cfg.telegram.chatId, text: `${draftInput.title}\n\n${draftInput.body}`.slice(0, 4096) }), signal: AbortSignal.timeout(15_000) }).catch(() => undefined);
+      }
+    }
   }
 }
 
@@ -78,9 +104,13 @@ export function createApp({ store, llm, config, fetcher = fetch, publicDir = pat
   const app = new Hono();
   const rate = new Map<string, { count: number; reset: number }>();
   const currentConfig = () => effectiveConfig(config, store.getSettings());
-  const currentLLM = () => {
+  const actions = new ActionRunner(store, store.filename === ':memory:' ? undefined : config.dataDir);
+  const backups = new BackupManager(store, config.dataDir);
+  const memory = new HindsightMemory(() => store.getSettings(), fetcher);
+  const currentLLM = (purpose = 'general') => {
     const active = currentConfig();
-    return llm || new OpenAICompatibleLLM(active.llmBaseUrl, active.llmApiKey, active.llmModel, fetcher, active.llmTimeoutMs);
+    const inner = llm || new OpenAICompatibleLLM(active.llmBaseUrl, active.llmApiKey, active.llmModel, fetcher, active.llmTimeoutMs);
+    return new ObservedLLM(inner, store, purpose, active.llmModel);
   };
 
   app.onError((error, c) => {
@@ -99,8 +129,13 @@ export function createApp({ store, llm, config, fetcher = fetch, publicDir = pat
     await next();
   });
 
-  app.get('/api/health', (c) => c.json({ ok: true, version: '0.2.0' }));
-  app.get('/api/settings', (c) => c.json({ settings: publicSettings(currentConfig()) }));
+  app.get('/api/health', (c) => c.json({ ok: store.integrityStatus === 'ok', version: '0.3.0', integrity: store.integrityStatus }));
+  app.get('/api/settings', (c) => {
+    const stored = store.getSettings();
+    const extras = Object.fromEntries(settingKeys.filter((key) => !secretSettingKeys.has(key) && stored[key] !== undefined).map((key) => [key, stored[key]]));
+    const configuredCap = Number(stored.llm_max_per_hour || stored.llmMaxPerHour || 60); const maxPerHour = Number.isInteger(configuredCap) && configuredCap > 0 ? configuredCap : 60;
+    return c.json({ settings: { ...publicSettings(currentConfig()), ...extras }, llm: { ...store.llmStats(), maxPerHour }, backups: backups.list(), integrity: store.integrityStatus });
+  });
   app.put('/api/settings', async (c) => {
     const body = await jsonBody(c);
     const updates: Record<string, string> = {};
@@ -108,12 +143,24 @@ export function createApp({ store, llm, config, fetcher = fetch, publicDir = pat
       const value = textField(body[key]);
       if (value !== undefined && !(secretSettingKeys.has(key) && value.startsWith('••••'))) updates[key] = value.trim();
     }
-    store.setSettings(updates);
-    return c.json({ settings: publicSettings(currentConfig()) });
+    await actions.runAction({ actor: 'human', action: 'change_settings', apply: () => store.setSettings(updates) });
+    return c.json({ settings: { ...publicSettings(currentConfig()), ...updates } });
   });
   app.post('/api/settings/test-llm', async (c) => {
-    const result = await currentLLM().complete('Reply with exactly OK.', 'Connection test');
+    const result = await currentLLM('connection-test').complete('Reply with exactly OK.', 'Connection test');
     return c.json({ ok: true, response: result.slice(0, 100) });
+  });
+  app.post('/api/onboarding/profile', async (c) => {
+    const body = await jsonBody(c); const url = textField(body.url); if (!url) throw new AppError('url is required');
+    const page = await fetchPage(url, fetcher, config.allowPrivateFetch); const extracted = extractWebsiteProfile(page.html, page.url);
+    let gaps: ReturnType<typeof validateProfileDraft> = null;
+    if (!extracted.description || !extracted.audience || !extracted.tone) {
+      try {
+        const raw = await currentLLM('website-profile').complete('Return only JSON with exactly these string keys: name, description, audience, tone. Use only supplied website data. Keep name <=120, description <=1000, audience <=500, tone <=200 characters.', JSON.stringify({ name: extracted.name, description: extracted.description, headings: extracted.headings, text: extracted.text.slice(0, 10000) }));
+        gaps = validateProfileDraft(raw);
+      } catch { /* deterministic profile remains usable when the optional LLM fill is unavailable */ }
+    }
+    return c.json({ profile: { ...extracted, ...(gaps || {}) } });
   });
 
   app.get('/api/projects', (c) => c.json({ projects: store.listProjects() }));
@@ -140,7 +187,7 @@ export function createApp({ store, llm, config, fetcher = fetch, publicDir = pat
       send?.('progress', { message: 'Fetching and reading the website…' });
       const page = await fetchPage(project.url, fetcher, config.allowPrivateFetch);
       send?.('progress', { message: 'Building the strategy with the LLM…' });
-      const strategy = await currentLLM().complete(
+      const strategy = await currentLLM('strategy').complete(
         `You are a pragmatic chief marketing officer. Write in ${project.language === 'es' ? 'Spanish' : 'English'}. Build a concise strategy grounded only in supplied information. Use Markdown sections: Positioning, Ideal customer profile, Keyword themes, Competitors to investigate, and Recommended channels. Clearly label assumptions.`,
         `Project: ${JSON.stringify(project)}\n\nWebsite text:\n${page.text}`,
       );
@@ -157,14 +204,24 @@ export function createApp({ store, llm, config, fetcher = fetch, publicDir = pat
     const body = await jsonBody(c);
     const execute = async (send?: (event: string, data: unknown) => void) => {
       const project = store.getProject(c.req.param('id'));
+      if (actions.isPaused()) throw new AppError('Agents are paused by Stop all', 409);
       send?.('progress', { message: `Running ${c.req.param('agent')} agent…` });
-      const outputs = await runAgent(c.req.param('agent'), project, textField(body.task) || '', currentLLM(), fetcher, {
+      const task = textField(body.task) || ''; const active = currentConfig();
+      const queryEmbedding = store.getSettings().ragEmbeddings === '1' ? await fetchEmbedding(active.llmBaseUrl, active.llmApiKey, store.getSettings().embeddingModel || active.llmModel, task, fetcher) : null;
+      const chunks = searchKnowledge(store.listKnowledgeChunks(project.id), task, { k: 4, queryEmbedding });
+      const memories = await memory.recall(task);
+      const outputs = await runAgent(c.req.param('agent'), project, task, currentLLM(`agent:${c.req.param('agent')}`), fetcher, {
         questionCount: typeof body.questionCount === 'number' ? body.questionCount : undefined,
         questions: Array.isArray(body.questions) ? body.questions.map(String) : undefined,
         allowPrivateFetch: config.allowPrivateFetch,
+        knowledgeData: formatKnowledgeData(chunks), memoryData: memories.map((item, index) => `[M${index + 1}] ${item}`).join('\n'),
       });
       send?.('progress', { message: 'Saving drafts…' });
-      const drafts = outputs.map((output) => store.createDraft(project.id, c.req.param('agent'), output));
+      const drafts: Draft[] = [];
+      for (const output of outputs) {
+        const outcome = await actions.runAction({ actor: c.req.param('agent'), action: 'create_draft', params: { projectId: project.id, agentId: c.req.param('agent'), output }, summary: `Create draft: ${output.title}`, apply: () => store.createDraft(project.id, c.req.param('agent'), output) });
+        if (outcome.result) drafts.push(outcome.result);
+      }
       for (const draft of drafts) {
         if (draft.agentId === 'geo') {
           const score = draft.metadata.score as { visible?: number; total?: number } | undefined;
@@ -179,6 +236,45 @@ export function createApp({ store, llm, config, fetcher = fetch, publicDir = pat
   });
   app.get('/api/projects/:id/geo-history', (c) => c.json({ history: store.listGeoHistory(c.req.param('id')) }));
 
+  app.get('/api/projects/:id/knowledge', (c) => c.json({ documents: store.listKnowledgeDocuments(c.req.param('id')) }));
+  app.post('/api/projects/:id/knowledge', async (c) => {
+    const body = await jsonBody(c); const text = textField(body.text)?.trim(); if (!text) throw new AppError('text is required');
+    const active = currentConfig(); const useEmbeddings = store.getSettings().ragEmbeddings === '1';
+    const parts = chunkText(text, 700); const chunks = [];
+    for (const part of parts) chunks.push({ text: part, embedding: useEmbeddings ? await fetchEmbedding(active.llmBaseUrl, active.llmApiKey, store.getSettings().embeddingModel || active.llmModel, part, fetcher) : null });
+    const document = store.addKnowledgeDocument(c.req.param('id'), textField(body.title) || 'Pasted note', textField(body.source) || 'paste', chunks);
+    return c.json({ document }, 201);
+  });
+  app.post('/api/projects/:id/knowledge/import-site', async (c) => {
+    const project = store.getProject(c.req.param('id')); if (!project.url) throw new AppError('Project URL is required');
+    const page = await fetchPage(project.url, fetcher, config.allowPrivateFetch); const active = currentConfig(); const useEmbeddings = store.getSettings().ragEmbeddings === '1'; const chunks = [];
+    for (const text of chunkText(page.text)) chunks.push({ text, embedding: useEmbeddings ? await fetchEmbedding(active.llmBaseUrl, active.llmApiKey, store.getSettings().embeddingModel || active.llmModel, text, fetcher) : null });
+    const document = store.addKnowledgeDocument(project.id, `Website: ${new URL(page.url).hostname}`, page.url, chunks);
+    return c.json({ document }, 201);
+  });
+  app.delete('/api/knowledge/:id', (c) => { store.deleteKnowledgeDocument(c.req.param('id')); return c.json({ ok: true }); });
+
+  app.get('/api/policy', (c) => c.json({ policy: actions.getPolicy(), defaults: defaultPolicy, floor: [...actionFloor], paused: actions.isPaused(), approvals: store.listApprovals(), activity: actions.activity() }));
+  app.put('/api/policy', async (c) => c.json({ policy: actions.setPolicy(await jsonBody(c)) }));
+  app.post('/api/agents/stop', async (c) => { const body = await jsonBody(c); return c.json({ paused: actions.stop(body.paused !== false) }); });
+  app.post('/api/approvals/:id/:decision', async (c) => {
+    const approve = c.req.param('decision') === 'approve'; if (!approve && c.req.param('decision') !== 'reject') throw new AppError('Invalid decision');
+    await actions.decide(c.req.param('id'), approve, {
+      create_draft: (params) => store.createDraft(String(params.projectId), String(params.agentId), params.output as Parameters<Store['createDraft']>[2]),
+      save_memory: async (params) => { await memory.retain(String(params.text || '')); },
+    });
+    return c.json({ ok: true });
+  });
+
+  app.get('/api/backups', (c) => c.json({ backups: backups.list(), integrity: store.integrityStatus }));
+  app.post('/api/backups', (c) => c.json({ backup: backups.create('manual') }, 201));
+  app.post('/api/backups/:name/restore', (c) => c.json(backups.restore(c.req.param('name'))));
+  app.post('/api/projects/:id/briefs/:period', async (c) => {
+    const period = c.req.param('period'); if (period !== 'morning' && period !== 'evening') throw new AppError('Invalid briefing period');
+    const input = buildBrief(store, c.req.param('id'), period); const outcome = await actions.runAction({ actor: `${period}-agent`, action: 'write_briefing', params: { projectId: c.req.param('id'), period }, summary: input.title, apply: () => store.createDraft(c.req.param('id'), `${period}-brief`, input) });
+    return c.json(outcome, outcome.result ? 201 : 202);
+  });
+
   app.get('/api/drafts', (c) => c.json({ drafts: store.listDrafts(c.req.query('project'), c.req.query('status')) }));
   app.patch('/api/drafts/:id', async (c) => {
     const body = await jsonBody(c);
@@ -188,7 +284,8 @@ export function createApp({ store, llm, config, fetcher = fetch, publicDir = pat
   app.post('/api/drafts/:id/reject', (c) => c.json({ draft: store.transitionDraft(c.req.param('id'), 'rejected') }));
   app.post('/api/drafts/:id/schedule', async (c) => {
     const body = await jsonBody(c);
-    return c.json({ draft: store.scheduleDraft(c.req.param('id'), textField(body.scheduledAt) || null, textField(body.connector) || null) });
+    const outcome = await actions.runAction({ actor: 'human', action: 'schedule', apply: () => store.scheduleDraft(c.req.param('id'), textField(body.scheduledAt) || null, textField(body.connector) || null) });
+    return c.json({ draft: outcome.result });
   });
   app.post('/api/drafts/bulk', async (c) => {
     const body = await jsonBody(c);
@@ -207,7 +304,8 @@ export function createApp({ store, llm, config, fetcher = fetch, publicDir = pat
     const body = await jsonBody(c);
     const connectorId = textField(body.connector);
     if (!connectorId) throw new AppError('connector is required');
-    return c.json(await publishDraft(store, config, fetcher, store.getDraft(c.req.param('id')), connectorId));
+    const outcome = await actions.runAction({ actor: 'human', action: 'publish', apply: () => publishDraft(store, config, fetcher, store.getDraft(c.req.param('id')), connectorId) });
+    return c.json(outcome.result!);
   });
   app.get('/api/connectors', (c) => c.json({ connectors: configuredConnectors(store, config, fetcher).map(({ id, name, configured }) => ({ id, name, configured })) }));
 

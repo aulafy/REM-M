@@ -1,6 +1,8 @@
 import { createRequire } from 'node:module';
 import { lookup } from 'node:dns/promises';
 import { isIP } from 'node:net';
+import { request as requestHttp } from 'node:http';
+import { request as requestHttps } from 'node:https';
 import { AppError } from './errors.js';
 
 type CheerioModule = { load(html: string): any };
@@ -69,6 +71,37 @@ export async function assertSafeUrl(url: URL, allowPrivate = process.env.ALLOW_P
     if (error instanceof AppError) throw error;
     throw new AppError(`Could not resolve ${hostname}: ${error instanceof Error ? error.message : String(error)}`, 502);
   }
+}
+
+async function nativeSafeFetch(url: URL, init: RequestInit): Promise<Response> {
+  const addresses = await lookup(url.hostname, { all: true, verbatim: true });
+  const safe = addresses.filter((item) => !isPrivateAddress(item.address));
+  if (!safe.length || safe.length !== addresses.length) throw new AppError('URL resolves to a private or loopback address', 403);
+  const selected = safe[0];
+  return await new Promise<Response>((resolve, reject) => {
+    const requester = url.protocol === 'https:' ? requestHttps : requestHttp;
+    const request = requester(url, {
+      method: init.method || 'GET', headers: init.headers as Record<string, string>,
+      lookup: (_hostname, options, callback) => {
+        if (typeof options === 'object' && options.all) callback(null, safe);
+        else callback(null, selected.address, selected.family);
+      },
+    }, (response) => {
+      const pieces: Buffer[] = []; let size = 0;
+      response.on('data', (piece: Buffer) => { size += piece.length; if (size > MAX_WEB_BYTES) request.destroy(new AppError('Website response is too large', 413)); else pieces.push(piece); });
+      response.on('end', () => {
+        const status = response.statusCode || 502; const noBody = init.method === 'HEAD' || status === 204 || status === 304;
+        resolve(new Response(noBody ? null : Buffer.concat(pieces), { status, headers: response.headers as Record<string, string> }));
+      });
+    });
+    request.setTimeout(15_000, () => request.destroy(new AppError('Website request timed out', 504)));
+    request.on('error', reject); request.end();
+  });
+}
+
+async function guardedFetch(url: URL, init: RequestInit, fetcher: typeof fetch, allowPrivate: boolean): Promise<Response> {
+  if (!allowPrivate && fetcher === globalThis.fetch) return nativeSafeFetch(url, init);
+  return fetcher(url, init);
 }
 
 export function extractPageText(html: string): string {
@@ -245,19 +278,30 @@ export function parseSeoHtml(html: string, rawUrl: string): ParsedSeoAudit {
   return finishAudit(pageUrl, title, metaDescription, h1, internalLinks, externalLinks, images, missingAlt, canonical, robotsMeta, htmlLang, openGraph, twitterCard, jsonLdCount, internalLinkUrls);
 }
 
-async function fetchText(url: URL, fetcher: typeof fetch, allowPrivate = process.env.ALLOW_PRIVATE_FETCH === '1'): Promise<{ text: string; status: number }> {
+const MAX_WEB_BYTES = 1_500_000;
+const POLITE_UA = 'OpenCMO/0.3 (+local marketing research; respects robots.txt)';
+
+async function fetchText(url: URL, fetcher: typeof fetch, allowPrivate = process.env.ALLOW_PRIVATE_FETCH === '1', honorRobots = false): Promise<{ text: string; status: number; url: string }> {
   try {
     let current = url;
     for (let redirects = 0; redirects <= 5; redirects += 1) {
       await assertSafeUrl(current, allowPrivate);
-      const response = await fetcher(current, { headers: { 'user-agent': 'OpenCMO/0.2 (+local SEO audit)' }, signal: AbortSignal.timeout(15_000), redirect: 'manual' });
+      if (honorRobots) {
+        const robots = await fetchText(new URL('/robots.txt', current), fetcher, allowPrivate, false).catch(() => ({ status: 0, text: '', url: '' }));
+        if (robots.status >= 200 && robots.status < 300 && !robotsAllows(robots.text, current.pathname)) throw new AppError('robots.txt disallows fetching this URL', 403);
+      }
+      const response = await guardedFetch(current, { headers: { 'user-agent': POLITE_UA }, signal: AbortSignal.timeout(15_000), redirect: 'manual' }, fetcher, allowPrivate);
       if (response.status >= 300 && response.status < 400 && response.headers.get('location')) {
         if (redirects === 5) throw new AppError('Too many website redirects', 502);
         current = new URL(response.headers.get('location')!, current);
         if (!['http:', 'https:'].includes(current.protocol)) throw new AppError('Website redirected to an unsupported URL', 403);
         continue;
       }
-      return { text: await response.text(), status: response.status };
+      const declared = Number(response.headers.get('content-length') || 0);
+      if (declared > MAX_WEB_BYTES) throw new AppError('Website response is too large', 413);
+      const bytes = new Uint8Array(await response.arrayBuffer());
+      if (bytes.byteLength > MAX_WEB_BYTES) throw new AppError('Website response is too large', 413);
+      return { text: new TextDecoder().decode(bytes), status: response.status, url: current.href };
     }
     throw new AppError('Too many website redirects', 502);
   } catch (error) {
@@ -272,12 +316,12 @@ async function checkInternalLink(url: URL, fetcher: typeof fetch, allowPrivate: 
     let current = url;
     for (let redirects = 0; redirects <= 5; redirects += 1) {
       await assertSafeUrl(current, allowPrivate);
-      const response = await fetcher(current, {
+      const response = await guardedFetch(current, {
         method: 'HEAD',
-        headers: { 'user-agent': 'OpenCMO/0.2 (+local SEO audit)' },
+        headers: { 'user-agent': POLITE_UA },
         signal: AbortSignal.timeout(15_000),
         redirect: 'manual',
-      });
+      }, fetcher, allowPrivate);
       if (response.status >= 300 && response.status < 400 && response.headers.get('location')) {
         if (redirects === 5) throw new AppError('Too many redirects', 502);
         current = new URL(response.headers.get('location')!, current);
@@ -294,21 +338,21 @@ async function checkInternalLink(url: URL, fetcher: typeof fetch, allowPrivate: 
 
 export async function fetchPage(rawUrl: string, fetcher: typeof fetch = fetch, allowPrivate = process.env.ALLOW_PRIVATE_FETCH === '1'): Promise<{ url: string; html: string; text: string }> {
   const url = normalizeUrl(rawUrl);
-  const result = await fetchText(url, fetcher, allowPrivate);
+  const result = await fetchText(url, fetcher, allowPrivate, true);
   if (result.status < 200 || result.status >= 300) throw new AppError(`Website returned HTTP ${result.status}`, 502);
-  return { url: url.href, html: result.text, text: extractPageText(result.text) };
+  return { url: result.url, html: result.text, text: extractPageText(result.text) };
 }
 
 export async function auditUrl(rawUrl: string, fetcher: typeof fetch = fetch, allowPrivate = process.env.ALLOW_PRIVATE_FETCH === '1'): Promise<SeoAudit> {
   const url = normalizeUrl(rawUrl);
-  const page = await fetchText(url, fetcher, allowPrivate);
+  const page = await fetchText(url, fetcher, allowPrivate, true);
   if (page.status < 200 || page.status >= 300) throw new AppError(`Website returned HTTP ${page.status}`, 502);
-  const parsed = parseSeoHtml(page.text, url.href);
+  const finalUrl = new URL(page.url); const robots = await fetchText(new URL('/robots.txt', finalUrl), fetcher, allowPrivate).catch(() => ({ status: 0, text: '', url: '' }));
+  const parsed = parseSeoHtml(page.text, finalUrl.href);
   const { internalLinkUrls, ...base } = parsed;
   const linksToCheck = internalLinkUrls.slice(0, 20);
-  const [robots, sitemap, linkResults] = await Promise.all([
-    fetchText(new URL('/robots.txt', url), fetcher, allowPrivate).catch(() => ({ status: 0, text: '' })),
-    fetchText(new URL('/sitemap.xml', url), fetcher, allowPrivate).catch(() => ({ status: 0, text: '' })),
+  const [sitemap, linkResults] = await Promise.all([
+    fetchText(new URL('/sitemap.xml', finalUrl), fetcher, allowPrivate).catch(() => ({ status: 0, text: '', url: '' })),
     Promise.all(linksToCheck.map((link) => checkInternalLink(new URL(link), fetcher, allowPrivate))),
   ]);
   const hasRobotsTxt = robots.status >= 200 && robots.status < 300;
@@ -319,4 +363,46 @@ export async function auditUrl(rawUrl: string, fetcher: typeof fetch = fetch, al
   const brokenInternalLinks = linkResults.filter((result): result is NonNullable<typeof result> => result !== null);
   if (brokenInternalLinks.length) base.issues.push(`${brokenInternalLinks.length} broken internal link(s) found`);
   return { ...base, checkedInternalLinks: linksToCheck.length, brokenInternalLinks, hasRobotsTxt, hasSitemap };
+}
+
+export function robotsAllows(text: string, pathname: string): boolean {
+  let applies = false; const disallowed: string[] = [];
+  for (const raw of text.split(/\r?\n/)) {
+    const line = raw.replace(/#.*$/, '').trim(); const separator = line.indexOf(':'); if (separator < 0) continue;
+    const key = line.slice(0, separator).trim().toLowerCase(); const value = line.slice(separator + 1).trim();
+    if (key === 'user-agent') applies = value === '*';
+    if (applies && key === 'disallow' && value) disallowed.push(value);
+    if (applies && key === 'allow' && value && pathname.startsWith(value)) return true;
+  }
+  return !disallowed.some((rule) => pathname.startsWith(rule));
+}
+
+export interface WebsiteProfile {
+  url: string; name: string; description: string; audience: string; tone: string; headings: string[];
+  openGraph: Record<string, string>; jsonLd: unknown[]; socialLinks: string[]; emails: string[]; phones: string[]; text: string;
+}
+
+export function extractWebsiteProfile(html: string, rawUrl: string): WebsiteProfile {
+  const pageUrl = normalizeUrl(rawUrl); const audit = parseSeoHtml(html, pageUrl.href);
+  const jsonLd: unknown[] = [];
+  for (const match of html.matchAll(/<script\b[^>]*type=["']application\/ld\+json[^>]*>([\s\S]*?)<\/script>/gi)) { try { const value = JSON.parse(match[1]); jsonLd.push(...(Array.isArray(value) ? value : [value])); } catch { /* invalid structured data */ } }
+  const links = [...html.matchAll(/<a\b[^>]*href\s*=\s*["']([^"']+)["']/gi)].map((match) => decodeEntities(match[1]));
+  const socialLinks = links.filter((link) => /(?:linkedin\.com|twitter\.com|x\.com|instagram\.com|facebook\.com|youtube\.com|tiktok\.com)/i.test(link)).slice(0, 20);
+  const emails = [...new Set([...html.matchAll(/mailto:([^?"'\s>]+)/gi)].map((match) => decodeURIComponent(match[1])))].slice(0, 20);
+  const phones = [...new Set([...html.matchAll(/tel:([^?"'\s>]+)/gi)].map((match) => decodeURIComponent(match[1])))].slice(0, 20);
+  const organization = jsonLd.find((item) => item && typeof item === 'object' && /Organization|LocalBusiness/i.test(String((item as Record<string, unknown>)['@type'] || ''))) as Record<string, unknown> | undefined;
+  const headings = [...html.matchAll(/<h[1-3]\b[^>]*>([\s\S]*?)<\/h[1-3]>/gi)].map((match) => decodeEntities(match[1].replace(/<[^>]+>/g, ' ')).replace(/\s+/g, ' ').trim()).filter(Boolean).slice(0, 30);
+  const name = String(organization?.name || audit.openGraph.title || audit.title || pageUrl.hostname).trim().slice(0, 120);
+  const description = String(organization?.description || audit.openGraph.description || audit.metaDescription || '').trim().slice(0, 1000);
+  return { url: pageUrl.href, name, description, audience: '', tone: '', headings, openGraph: Object.fromEntries(Object.entries(audit.openGraph).filter((entry): entry is [string, string] => Boolean(entry[1]))), jsonLd, socialLinks, emails, phones, text: extractPageText(html) };
+}
+
+export function validateProfileDraft(value: unknown): Pick<WebsiteProfile, 'name' | 'description' | 'audience' | 'tone'> | null {
+  let input: unknown = value; if (typeof input === 'string') { try { input = JSON.parse(input); } catch { return null; } }
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return null;
+  const object = input as Record<string, unknown>; const allowed = new Set(['name', 'description', 'audience', 'tone']);
+  if (Object.keys(object).some((key) => !allowed.has(key))) return null;
+  const field = (key: string, max: number) => typeof object[key] === 'string' ? object[key].trim().slice(0, max) : '';
+  const name = field('name', 120); if (!name) return null;
+  return { name, description: field('description', 1000), audience: field('audience', 500), tone: field('tone', 200) };
 }

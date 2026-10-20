@@ -1,21 +1,24 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { serve } from '@hono/node-server';
-import { createApp, publishDueDrafts } from './app.js';
+import { createApp, runMaintenance } from './app.js';
 import { loadConfig } from './config.js';
 import { Store } from './db.js';
+import { applyPendingRestore } from './backups.js';
 
 try { process.loadEnvFile(); } catch (error) {
   if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) throw error;
 }
 
 const config = loadConfig();
-const store = new Store(path.join(config.dataDir, 'opencmo.sqlite'));
+const databaseFile = path.join(config.dataDir, 'opencmo.sqlite');
+applyPendingRestore(databaseFile);
+const store = new Store(databaseFile);
 const publicDir = fileURLToPath(new URL('../public', import.meta.url));
 const app = createApp({ store, config, publicDir });
 
 const server = serve({ fetch: app.fetch, port: config.port, hostname: config.host }, (info) => {
-  console.log(`OpenCMO v0.2 running at http://${config.host}:${info.port}`);
+  console.log(`OpenCMO v0.3 running at http://${config.host}:${info.port}`);
 });
 server.on('error', (error) => {
   console.error(`OpenCMO could not start: ${error.message}`);
@@ -35,7 +38,7 @@ let schedulerBusy = false;
 async function runScheduler() {
   if (schedulerBusy) return;
   schedulerBusy = true;
-  try { await publishDueDrafts(store, config); } finally { schedulerBusy = false; }
+  try { await runMaintenance(store, config); } finally { schedulerBusy = false; }
 }
 const scheduler = setInterval(() => { void runScheduler(); }, 60_000);
 void runScheduler();

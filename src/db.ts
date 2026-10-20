@@ -3,7 +3,8 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { createRequire } from 'node:module';
 import { AppError } from './errors.js';
-import type { Draft, DraftInput, DraftStatus, GeoHistory, Project } from './types.js';
+import type { Approval, Draft, DraftInput, DraftStatus, GeoHistory, KnowledgeDocument, Project } from './types.js';
+import type { KnowledgeChunk } from './rag.js';
 
 type ProjectRow = Omit<Project, 'createdAt' | 'updatedAt'> & { created_at: string; updated_at: string };
 type DraftRow = Omit<Draft, 'projectId' | 'metadata' | 'createdAt' | 'updatedAt'> & {
@@ -50,9 +51,12 @@ function openDatabase(filename: string): SqliteDatabase {
 }
 
 export class Store {
-  readonly db: SqliteDatabase;
+  db: SqliteDatabase;
+  readonly filename: string;
+  integrityStatus = 'ok';
 
   constructor(filename: string) {
+    this.filename = filename;
     if (filename !== ':memory:') fs.mkdirSync(path.dirname(filename), { recursive: true });
     this.db = openDatabase(filename);
     this.db.pragma('foreign_keys = ON');
@@ -92,11 +96,30 @@ export class Store {
         score REAL NOT NULL, visible INTEGER NOT NULL, total INTEGER NOT NULL, checks TEXT NOT NULL, created_at TEXT NOT NULL
       );
       CREATE INDEX IF NOT EXISTS geo_history_project_created ON geo_history(project_id, created_at);
+      CREATE TABLE IF NOT EXISTS knowledge_documents (
+        id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        title TEXT NOT NULL, source TEXT NOT NULL DEFAULT 'paste', created_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS knowledge_chunks (
+        id TEXT PRIMARY KEY, document_id TEXT NOT NULL REFERENCES knowledge_documents(id) ON DELETE CASCADE,
+        project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE, title TEXT NOT NULL, text TEXT NOT NULL, embedding TEXT
+      );
+      CREATE INDEX IF NOT EXISTS knowledge_chunks_project ON knowledge_chunks(project_id);
+      CREATE TABLE IF NOT EXISTS approvals (
+        id TEXT PRIMARY KEY, agent TEXT NOT NULL, action TEXT NOT NULL, params TEXT NOT NULL, summary TEXT NOT NULL,
+        decision TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending', reason TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL, decided_at TEXT
+      );
+      CREATE TABLE IF NOT EXISTS llm_calls (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, at TEXT NOT NULL, purpose TEXT NOT NULL, model TEXT NOT NULL, ms INTEGER NOT NULL,
+        tokens_in INTEGER NOT NULL DEFAULT 0, tokens_out INTEGER NOT NULL DEFAULT 0, status TEXT NOT NULL, error TEXT NOT NULL DEFAULT ''
+      );
     `);
     this.migrateColumn('projects', 'language', "TEXT NOT NULL DEFAULT 'en'");
     this.migrateColumn('projects', 'competitors', "TEXT NOT NULL DEFAULT '[]'");
     this.migrateColumn('drafts', 'scheduled_at', 'TEXT');
     this.migrateColumn('drafts', 'scheduled_connector', 'TEXT');
+    const integrity = this.db.prepare('PRAGMA integrity_check').get() as Record<string, string> | undefined;
+    this.integrityStatus = integrity ? Object.values(integrity)[0] || 'unknown' : 'unknown';
   }
 
   private migrateColumn(table: string, column: string, definition: string) {
@@ -248,5 +271,63 @@ export class Store {
   listGeoHistory(projectId: string): GeoHistory[] {
     const rows = this.db.prepare('SELECT * FROM geo_history WHERE project_id = ? ORDER BY created_at').all(projectId) as Array<{ id: string; project_id: string; score: number; visible: number; total: number; checks: string; created_at: string }>;
     return rows.map((row) => ({ id: row.id, projectId: row.project_id, score: row.score, visible: row.visible, total: row.total, checks: JSON.parse(row.checks), createdAt: row.created_at }));
+  }
+
+  addKnowledgeDocument(projectId: string, title: string, source: string, chunks: Array<{ text: string; embedding?: number[] | null }>): KnowledgeDocument {
+    this.getProject(projectId);
+    const document: KnowledgeDocument = { id: randomUUID(), projectId, title: title.trim().slice(0, 200) || 'Untitled', source: source.slice(0, 500), createdAt: now() };
+    this.db.prepare('INSERT INTO knowledge_documents (id,project_id,title,source,created_at) VALUES (?,?,?,?,?)').run(document.id, projectId, document.title, document.source, document.createdAt);
+    const insert = this.db.prepare('INSERT INTO knowledge_chunks (id,document_id,project_id,title,text,embedding) VALUES (?,?,?,?,?,?)');
+    for (const chunk of chunks) insert.run(randomUUID(), document.id, projectId, document.title, chunk.text, chunk.embedding ? JSON.stringify(chunk.embedding) : null);
+    return document;
+  }
+
+  listKnowledgeDocuments(projectId: string): KnowledgeDocument[] {
+    const rows = this.db.prepare('SELECT * FROM knowledge_documents WHERE project_id = ? ORDER BY created_at DESC').all(projectId) as Array<{ id: string; project_id: string; title: string; source: string; created_at: string }>;
+    return rows.map((row) => ({ id: row.id, projectId: row.project_id, title: row.title, source: row.source, createdAt: row.created_at }));
+  }
+
+  listKnowledgeChunks(projectId: string): KnowledgeChunk[] {
+    const rows = this.db.prepare('SELECT id,document_id,title,text,embedding FROM knowledge_chunks WHERE project_id = ?').all(projectId) as Array<{ id: string; document_id: string; title: string; text: string; embedding: string | null }>;
+    return rows.map((row) => ({ id: row.id, documentId: row.document_id, title: row.title, text: row.text, embedding: row.embedding ? JSON.parse(row.embedding) as number[] : null }));
+  }
+
+  deleteKnowledgeDocument(id: string) { const result = this.db.prepare('DELETE FROM knowledge_documents WHERE id = ?').run(id); if (!result.changes) throw new AppError('Knowledge document not found', 404); }
+
+  createApproval(agent: string, action: string, params: Record<string, unknown>, summary: string, decision: string, reason: string): Approval {
+    const item: Approval = { id: randomUUID(), agent, action, params, summary, decision, status: 'pending', reason, createdAt: now(), decidedAt: null };
+    this.db.prepare('INSERT INTO approvals (id,agent,action,params,summary,decision,status,reason,created_at,decided_at) VALUES (?,?,?,?,?,?,?,?,?,?)').run(item.id, agent, action, JSON.stringify(params), summary, decision, item.status, reason, item.createdAt, null);
+    return item;
+  }
+
+  private mapApproval(row: Record<string, unknown> | undefined): Approval | undefined {
+    if (!row) return undefined;
+    return { id: String(row.id), agent: String(row.agent), action: String(row.action), params: JSON.parse(String(row.params)), summary: String(row.summary), decision: String(row.decision), status: String(row.status), reason: String(row.reason), createdAt: String(row.created_at), decidedAt: row.decided_at ? String(row.decided_at) : null };
+  }
+  getApproval(id: string): Approval { const item = this.mapApproval(this.db.prepare('SELECT * FROM approvals WHERE id = ?').get(id) as Record<string, unknown> | undefined); if (!item) throw new AppError('Approval not found', 404); return item; }
+  listApprovals(): Approval[] { return (this.db.prepare("SELECT * FROM approvals WHERE status = 'pending' ORDER BY created_at DESC").all() as Record<string, unknown>[]).map((row) => this.mapApproval(row)!); }
+  decideApproval(id: string, status: 'approved' | 'rejected') { this.db.prepare("UPDATE approvals SET status = ?, decided_at = ? WHERE id = ? AND status = 'pending'").run(status, now(), id); }
+  clearPendingApprovals() { this.db.prepare("UPDATE approvals SET status = 'rejected', decided_at = ? WHERE status = 'pending'").run(now()); }
+
+  recordLlmCall(item: { purpose: string; model: string; ms: number; tokensIn: number; tokensOut: number; status: string; error?: string }) {
+    this.db.prepare('INSERT INTO llm_calls (at,purpose,model,ms,tokens_in,tokens_out,status,error) VALUES (?,?,?,?,?,?,?,?)').run(now(), item.purpose, item.model, item.ms, item.tokensIn, item.tokensOut, item.status, item.error || '');
+  }
+  countLlmCallsSince(since: string): number { return Number((this.db.prepare('SELECT COUNT(*) AS count FROM llm_calls WHERE at > ?').get(since) as { count: number }).count); }
+  llmStats() {
+    const since = new Date(Date.now() - 86_400_000).toISOString();
+    const rows = this.db.prepare('SELECT * FROM llm_calls WHERE at > ? ORDER BY id DESC').all(since) as Array<{ ms: number; tokens_in: number; tokens_out: number; status: string; purpose: string; model: string; at: string; error: string }>;
+    const ok = rows.filter((row) => row.status === 'ok');
+    return { calls24h: rows.length, errors24h: rows.length - ok.length, avgMs: ok.length ? Math.round(ok.reduce((sum, row) => sum + row.ms, 0) / ok.length) : 0, tokens24h: rows.reduce((sum, row) => sum + row.tokens_in + row.tokens_out, 0), recent: rows.slice(0, 12) };
+  }
+
+  briefingFacts(projectId: string, at = new Date()) {
+    const drafts = this.listDrafts(projectId);
+    const day = at.toISOString().slice(0, 10);
+    const tomorrow = new Date(at.getTime() + 86_400_000).toISOString().slice(0, 10);
+    const geo = this.listGeoHistory(projectId);
+    const change = geo.length > 1 ? geo.at(-1)!.score - geo.at(-2)!.score : 0;
+    const latestSeo = drafts.find((draft) => draft.agentId === 'seo');
+    const seoAudit = latestSeo?.metadata.audit as { issues?: unknown[] } | undefined;
+    return { pending: drafts.filter((draft) => draft.status === 'pending').length, scheduledToday: drafts.filter((draft) => draft.scheduledAt?.startsWith(day)).length, scheduledTomorrow: drafts.filter((draft) => draft.scheduledAt?.startsWith(tomorrow)).length, publishedToday: drafts.filter((draft) => draft.status === 'published' && draft.updatedAt.startsWith(day)).length, geoChange: change, seoIssuesOpen: Array.isArray(seoAudit?.issues) ? seoAudit.issues.length : 0 };
   }
 }

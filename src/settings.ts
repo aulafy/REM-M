@@ -6,6 +6,8 @@ export const settingKeys = [
   'githubToken', 'githubRepo', 'githubBranch',
   'webhookUrl', 'webhookSecret',
   'telegramBotToken', 'telegramChatId', 'discordWebhookUrl',
+  'llmMaxPerHour', 'llm_max_per_hour', 'ragEmbeddings', 'embeddingModel', 'briefsEnabled', 'morningBriefTime', 'eveningBriefTime', 'briefTelegram',
+  'hindsightEnabled', 'hindsightUrl',
 ] as const;
 
 export const secretSettingKeys = new Set<string>(['llmApiKey', 'wordpressPassword', 'githubToken', 'webhookSecret', 'telegramBotToken']);

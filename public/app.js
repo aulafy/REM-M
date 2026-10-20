@@ -1,4 +1,4 @@
-const state = { projects: [], current: null, agents: [], selectedAgent: 'writer', connectors: [], drafts: [], selected: new Set(), language: navigator.language.startsWith('es') ? 'es' : 'en' };
+const state = { projects: [], current: null, agents: [], selectedAgent: 'writer', connectors: [], drafts: [], selected: new Set(), language: navigator.language.startsWith('es') ? 'es' : 'en', pendingProfileText: '' };
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
 const words = {
@@ -54,7 +54,7 @@ async function load() {
 }
 
 function updateTranslations() {
-  ['strategy', 'agents', 'inbox', 'calendar'].forEach((id) => {
+  ['strategy', 'knowledge', 'agents', 'inbox', 'calendar', 'policy'].forEach((id) => {
     const tab = $(`[data-tab="${id}"]`); if (tab) tab.childNodes[0].textContent = `${t(id)} `;
   });
   const copy = {
@@ -93,7 +93,23 @@ async function selectProject(id) {
   $('#empty').hidden = true; $('#workspace').hidden = false; $('#project-title').textContent = state.current.name;
   $('#strategy-content').textContent = state.current.strategy || t('noStrategy');
   $('#strategy-content').classList.toggle('muted', !state.current.strategy);
-  renderProjects(); renderAgents(); await Promise.all([loadDrafts(), loadGeoHistory()]);
+  renderProjects(); renderAgents(); await Promise.all([loadDrafts(), loadGeoHistory(), loadKnowledge(), loadPolicy()]);
+}
+
+async function loadKnowledge() {
+  const { documents } = await api(`/api/projects/${state.current.id}/knowledge`);
+  $('#knowledge-list').innerHTML = documents.length ? documents.map((document) => `<article class="card knowledge-item"><div><strong>${escapeHtml(document.title)}</strong><p class="muted">${escapeHtml(document.source)} · ${new Date(document.createdAt).toLocaleString()}</p></div><button class="danger" data-delete-knowledge="${document.id}">Delete</button></article>`).join('') : '<div class="card empty-list">No knowledge documents yet.</div>';
+  $$('[data-delete-knowledge]').forEach((button) => button.onclick = () => perform(async () => { await api(`/api/knowledge/${button.dataset.deleteKnowledge}`, { method: 'DELETE' }); await loadKnowledge(); }));
+}
+
+async function loadPolicy() {
+  const data = await api('/api/policy');
+  $('#stop-agents').textContent = data.paused ? 'Resume agents' : 'Stop all'; $('#stop-agents').dataset.paused = String(data.paused);
+  $('#policy-floor').innerHTML = `<strong>Always handed to a human</strong><p class="muted">${data.floor.map((action) => escapeHtml(action.replaceAll('_', ' '))).join(' · ')}</p>`;
+  $('#policy-form').innerHTML = Object.entries(data.policy).map(([action, mode]) => `<label>${escapeHtml(action.replaceAll('_', ' '))}<select name="${escapeHtml(action)}"><option ${mode === 'act' ? 'selected' : ''}>act</option><option ${mode === 'ask' ? 'selected' : ''}>ask</option><option ${mode === 'handoff' ? 'selected' : ''}>handoff</option></select></label>`).join('') + '<button class="primary" type="submit">Save policy</button>';
+  $('#approval-list').innerHTML = data.approvals.length ? data.approvals.map((approval) => `<article class="card approval-item"><div><strong>${escapeHtml(approval.summary)}</strong><p class="muted">${escapeHtml(approval.agent)} · ${escapeHtml(approval.reason)}</p></div><div><button class="primary" data-approval="${approval.id}" data-decision="approve">Approve</button> <button class="danger" data-approval="${approval.id}" data-decision="reject">Reject</button></div></article>`).join('') : '<div class="card empty-list">No pending approvals.</div>';
+  $('#activity-list').innerHTML = data.activity.length ? data.activity.map((entry) => `<p><strong>${escapeHtml(entry.action)}</strong> · ${escapeHtml(entry.decision)} <small>${escapeHtml(entry.actor || '')} · ${new Date(entry.at).toLocaleString()}</small></p>`).join('') : '<p class="muted">No activity yet.</p>';
+  $$('[data-approval]').forEach((button) => button.onclick = () => perform(async () => { await api(`/api/approvals/${button.dataset.approval}/${button.dataset.decision}`, { method: 'POST' }); await Promise.all([loadPolicy(), loadDrafts()]); }));
 }
 
 async function loadGeoHistory() {
@@ -191,7 +207,9 @@ $('[data-close]').onclick = () => $('#project-dialog').close();
 $('#project-form').onsubmit = (event) => perform(async () => {
   event.preventDefault(); const body = Object.fromEntries(new FormData(event.currentTarget));
   const data = await api('/api/projects', { method: 'POST', body: JSON.stringify(body) });
-  state.projects.unshift(data.project); $('#project-dialog').close(); event.currentTarget.reset(); renderProjects(); await selectProject(data.project.id); notify('Project created');
+  state.projects.unshift(data.project); $('#project-dialog').close(); event.currentTarget.reset(); renderProjects(); await selectProject(data.project.id);
+  if (state.pendingProfileText) { await api(`/api/projects/${data.project.id}/knowledge`, { method: 'POST', body: JSON.stringify({ title: 'Website profile', source: data.project.url, text: state.pendingProfileText }) }); state.pendingProfileText = ''; await loadKnowledge(); }
+  notify('Project created');
 }, event.submitter);
 $$('.tab').forEach((tab) => tab.onclick = () => { $$('.tab,.panel').forEach((el) => el.classList.remove('active')); tab.classList.add('active'); $(`#${tab.dataset.tab}`).classList.add('active'); });
 $('#draft-filter').onchange = () => perform(loadDrafts);
@@ -225,8 +243,8 @@ $('#workspace-language').onchange = (event) => perform(async () => {
 });
 
 $('#open-settings').onclick = () => perform(async () => {
-  const { settings } = await api('/api/settings'); const form = $('#settings-form');
-  Object.entries(settings).forEach(([key, value]) => { if (form.elements[key]) form.elements[key].value = value; }); $('#settings-dialog').showModal();
+  const data = await api('/api/settings'); const form = $('#settings-form');
+  Object.entries(data.settings).forEach(([key, value]) => { if (!form.elements[key]) return; if (form.elements[key].type === 'checkbox') form.elements[key].checked = value === '1'; else form.elements[key].value = value; }); renderSettingsMeta(data); $('#settings-dialog').showModal();
 });
 $('[data-close-settings]').onclick = () => $('#settings-dialog').close();
 $('#settings-form').onsubmit = (event) => perform(async () => {
@@ -234,8 +252,35 @@ $('#settings-form').onsubmit = (event) => perform(async () => {
   state.connectors = (await api('/api/connectors')).connectors; $('#settings-dialog').close(); notify('Settings saved'); await loadDrafts();
 }, event.submitter);
 $('#test-llm').onclick = (event) => perform(async () => {
-  await api('/api/settings', { method: 'PUT', body: JSON.stringify(Object.fromEntries(new FormData($('#settings-form')))) });
+  await api('/api/settings', { method: 'PUT', body: JSON.stringify(settingsPayload()) });
   await api('/api/settings/test-llm', { method: 'POST' }); notify('LLM connection works');
 }, event.currentTarget);
+
+$('#profile-site').onclick = (event) => perform(async () => {
+  const form = $('#project-form'); const url = form.elements.url.value; if (!url) throw new Error('Enter a website URL first');
+  const { profile } = await api('/api/onboarding/profile', { method: 'POST', body: JSON.stringify({ url }) });
+  for (const key of ['name', 'description', 'audience', 'tone']) if (profile[key] && !form.elements[key].value) form.elements[key].value = profile[key];
+  state.pendingProfileText = profile.text || ''; notify('Website profile ready for review');
+}, event.currentTarget);
+
+$('#knowledge-file').onchange = async (event) => { const file = event.target.files[0]; if (file) $('#knowledge-text').value = await file.text(); };
+$('#knowledge-form').onsubmit = (event) => perform(async () => { event.preventDefault(); const body = Object.fromEntries(new FormData(event.currentTarget)); await api(`/api/projects/${state.current.id}/knowledge`, { method: 'POST', body: JSON.stringify(body) }); event.currentTarget.reset(); await loadKnowledge(); notify('Knowledge document added'); }, event.submitter);
+$('#import-site').onclick = (event) => perform(async () => { await api(`/api/projects/${state.current.id}/knowledge/import-site`, { method: 'POST' }); await loadKnowledge(); notify('Website imported'); }, event.currentTarget);
+$('#policy-form').onsubmit = (event) => perform(async () => { event.preventDefault(); await api('/api/policy', { method: 'PUT', body: JSON.stringify(Object.fromEntries(new FormData(event.currentTarget))) }); await loadPolicy(); notify('Policy saved'); }, event.submitter);
+$('#stop-agents').onclick = (event) => perform(async () => { const paused = event.currentTarget.dataset.paused !== 'true'; await api('/api/agents/stop', { method: 'POST', body: JSON.stringify({ paused }) }); await loadPolicy(); notify(paused ? 'All agents stopped and approval queue cleared' : 'Agents resumed'); }, event.currentTarget);
+
+function settingsPayload() { const form = $('#settings-form'); const result = Object.fromEntries(new FormData(form)); for (const name of ['ragEmbeddings', 'briefsEnabled', 'briefTelegram', 'hindsightEnabled']) result[name] = form.elements[name].checked ? '1' : '0'; return result; }
+$('#settings-form').onsubmit = (event) => perform(async () => {
+  event.preventDefault(); await api('/api/settings', { method: 'PUT', body: JSON.stringify(settingsPayload()) });
+  state.connectors = (await api('/api/connectors')).connectors; $('#settings-dialog').close(); notify('Settings saved'); await loadDrafts();
+}, event.submitter);
+$('#create-backup').onclick = (event) => perform(async () => { await api('/api/backups', { method: 'POST' }); notify('Backup created'); const data = await api('/api/settings'); renderSettingsMeta(data); }, event.currentTarget);
+
+function renderSettingsMeta(data) {
+  $('#llm-stats').textContent = `${data.llm.calls24h} calls · ${data.llm.errors24h} errors · ${data.llm.avgMs} ms average · ${data.llm.tokens24h} estimated tokens (24h)`;
+  $('#integrity-status').textContent = `Database integrity: ${data.integrity}`;
+  $('#backup-list').innerHTML = data.backups.length ? data.backups.map((item) => `<p>${escapeHtml(item.name)} · ${Math.ceil(item.size / 1024)} KB <button type="button" class="danger" data-restore="${escapeHtml(item.name)}">Restore</button></p>`).join('') : '<p class="muted">No backups yet.</p>';
+  $$('[data-restore]').forEach((button) => button.onclick = () => perform(async () => { if (!confirm('Restore this backup on the next app restart? A safety copy will be kept.')) return; await api(`/api/backups/${encodeURIComponent(button.dataset.restore)}/restore`, { method: 'POST' }); notify('Restore staged. Restart OpenCMO to apply it.'); }));
+}
 
 load().catch((error) => notify(error.message, true));

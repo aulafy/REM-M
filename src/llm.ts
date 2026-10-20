@@ -2,6 +2,7 @@ import { AppError } from './errors.js';
 import type { LLM } from './types.js';
 
 export class OpenAICompatibleLLM implements LLM {
+  private usage: { tokensIn: number; tokensOut: number } | null = null;
   constructor(
     private baseUrl: string,
     private apiKey: string,
@@ -24,11 +25,14 @@ export class OpenAICompatibleLLM implements LLM {
       throw new AppError(`LLM request failed: ${error instanceof Error ? error.message : String(error)}.${hint}`, 502);
     }
     if (!response.ok) throw new AppError(`LLM returned ${response.status}: ${(await response.text()).slice(0, 500)}`, 502);
-    const payload = await response.json() as { choices?: Array<{ message?: { content?: string } }> };
+    const payload = await response.json() as { choices?: Array<{ message?: { content?: string } }>; usage?: { prompt_tokens?: number; completion_tokens?: number } };
+    this.usage = payload.usage ? { tokensIn: Number(payload.usage.prompt_tokens || 0), tokensOut: Number(payload.usage.completion_tokens || 0) } : null;
     const content = payload.choices?.[0]?.message?.content?.trim();
     if (!content) throw new AppError('LLM returned no content', 502);
     return content;
   }
+
+  takeUsage() { const usage = this.usage; this.usage = null; return usage; }
 
   async test(): Promise<string> {
     return this.complete('Reply with exactly: OK', 'Connection test');

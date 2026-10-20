@@ -61,7 +61,12 @@ export interface AgentRunOptions {
   questionCount?: number;
   questions?: string[];
   allowPrivateFetch?: boolean;
+  knowledgeData?: string;
+  memoryData?: string;
 }
+
+export interface KnowledgeDocument { id: string; projectId: string; title: string; source: string; createdAt: string; }
+export interface Approval { id: string; agent: string; action: string; params: Record<string, unknown>; summary: string; decision: string; status: string; reason: string; createdAt: string; decidedAt: string | null; }
 
 export interface AgentDefinition {
   id: string;
