@@ -33,6 +33,7 @@
     <aside>
       <div class="brand"><span>O</span> OpenCMO</div>
       <button id="new-project" class="primary wide" data-i18n="newProject">+ New project</button>
+      <button id="agency-overview-button" class="aside-button">▦ Agency overview</button>
       <button id="open-settings" class="aside-button" data-i18n="settingsButton">⚙ Settings</button>
       <p class="eyebrow" data-i18n="projects">Projects</p>
       <nav id="projects" aria-label="Projects"></nav>
@@ -53,6 +54,11 @@
         <button class="primary" data-open-project data-i18n="createProject">Create project</button> <button class="secondary" data-demo data-i18n="trySample">Try with a sample business</button>
       </section>
 
+      <section id="agency-overview" hidden>
+        <div class="panel-heading"><div><p class="eyebrow">AGENCY VIEW</p><h2>All client projects</h2><p>Health, approvals, scheduling, and overdue work in one place.</p></div></div>
+        <div id="agency-projects" class="overview-grid skeleton"></div>
+      </section>
+
       <div id="workspace" hidden>
         <div class="tabs" role="tablist">
           <button class="tab active" data-tab="today" data-i18n="today">Today</button>
@@ -65,8 +71,12 @@
         </div>
 
         <section id="today" class="panel active">
-          <div class="panel-heading"><div><h2 data-i18n="todayTitle">Today</h2><p data-i18n="todayHelp">A short, practical view of what moves your marketing forward.</p></div><button id="generate-month" class="primary" data-i18n="generateMonth">Generate my month</button></div>
+          <div class="panel-heading"><div><h2 data-i18n="todayTitle">Today</h2><p data-i18n="todayHelp">A short, practical view of what moves your marketing forward.</p></div><div class="heading-actions"><button id="export-report" class="secondary">Export report</button><button id="generate-month" class="primary" data-i18n="generateMonth">Generate my month</button></div></div>
           <div id="today-dashboard" class="dashboard skeleton"><div class="card"></div><div class="card"></div><div class="card"></div></div>
+          <section class="product-tools">
+            <article class="card"><h3>Search Console opportunities</h3><p class="muted">Upload the Queries CSV export. It stays on this computer.</p><label class="file-action">Queries CSV <input id="gsc-file" type="file" accept=".csv,text/csv"></label><div id="gsc-opportunities"></div></article>
+            <article class="card"><h3>Competitor comparison</h3><p class="muted">Add up to five public URLs. The table uses measured page data, not AI.</p><form id="competitor-form"><label>Competitor URLs, one per line<textarea id="competitor-urls" rows="4" placeholder="https://competitor.example"></textarea></label><button class="primary" type="submit">Run comparison</button></form><div id="competitor-results"></div></article>
+          </section>
         </section>
 
         <section id="strategy" class="panel">
@@ -106,6 +116,7 @@
 
         <section id="policy" class="panel">
           <div class="panel-heading"><div><h2>Action policy</h2><p>The hard safety floor cannot be relaxed by settings.</p></div><button id="stop-agents" class="danger">Stop all</button></div>
+          <article class="card trust-intro"><h3>Trust &amp; safety</h3><div class="trust-grid"><div><strong>What AI can do</strong><p>Read the public pages you request, use your project knowledge as quoted data, and prepare drafts for review.</p></div><div><strong>What AI cannot do</strong><p>It cannot publish without your explicit approval, relax the hard safety rules, delete your data, or connect a channel by itself.</p></div><div><strong>What leaves this computer</strong><p>Prompts go only to the AI endpoint you configure. Public-site checks contact those sites. Publishing sends approved content only to your chosen connector.</p></div><div><strong>Where data lives</strong><p>Projects, drafts, settings, and metrics are stored in the local SQLite file under your configured data folder. Secrets are masked in the UI.</p></div></div></article>
           <div id="policy-floor" class="card floor"></div>
           <form id="policy-form" class="card policy-grid"></form>
           <h3>Pending approvals</h3><div id="approval-list"></div>
@@ -131,6 +142,7 @@
     <form id="settings-form">
       <div class="dialog-title"><h2>Settings</h2><button type="button" class="icon" data-close-settings aria-label="Close">×</button></div>
       <fieldset><legend data-i18n="basic">Basic</legend><label><span data-i18n="aiEngine">AI engine URL</span><input name="llmBaseUrl" type="url"></label><div class="two"><label><span data-i18n="model">Model</span><input name="llmModel"></label><label><span data-i18n="apiKey">API key</span><input name="llmApiKey" type="password"></label></div><label><span data-i18n="language">Language</span><select name="uiLanguage"><option value="en">English</option><option value="es">Español</option></select></label><label><span data-i18n="exportFolder">Export folder</span><input name="markdownExportDir"></label><button id="test-llm" type="button" class="secondary" data-i18n="testConnection">Test AI connection</button><button id="restart-wizard" type="button" class="secondary" data-i18n="restartWizard">Run setup wizard again</button></fieldset>
+      <fieldset><legend>Branding for client reports</legend><label>Agency name <input name="brandingAgencyName" placeholder="Your agency"></label><div class="two"><label>Accent color <input name="brandingAccentColor" type="color" value="#176a46"></label><label><input class="inline-check" name="brandingPoweredBy" type="checkbox" value="1"> Show “Powered by OpenCMO”</label></div><label>Logo (embedded in reports) <input id="branding-logo-file" type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml"><input name="brandingLogoData" type="hidden"></label></fieldset>
       <details class="advanced-settings"><summary data-i18n="advanced">Advanced</summary>
       <fieldset><legend data-i18n="aiLimits">AI limits & retrieval</legend><div class="two"><label>Request timeout (milliseconds) <input name="llmTimeoutMs" type="number" min="1" step="1000"></label><label>Maximum calls/hour <input name="llmMaxPerHour" type="number" min="1" value="60"></label></div><label><input class="inline-check" name="ragEmbeddings" type="checkbox" value="1"> Fuse optional embeddings with BM25</label><label>Embedding model <input name="embeddingModel" placeholder="nomic-embed-text"></label><div id="llm-stats" class="stats"></div></fieldset>
       <fieldset><legend>Daily briefs</legend><label><input class="inline-check" name="briefsEnabled" type="checkbox" value="1" checked> Enable morning/evening briefs</label><label><input class="inline-check" name="briefTelegram" type="checkbox" value="1"> Notify configured Telegram chat</label><div class="two"><label>Morning time <input name="morningBriefTime" type="time" value="08:00"></label><label>Evening time <input name="eveningBriefTime" type="time" value="18:00"></label></div></fieldset>

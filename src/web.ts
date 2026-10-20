@@ -32,6 +32,8 @@ export interface SeoAudit {
   hasRobotsTxt: boolean | null;
   issues: string[];
   warnings: string[];
+  /** Downloaded HTML size in bytes. A deliberately simple, deterministic speed proxy. */
+  htmlBytes?: number;
 }
 
 type ParsedSeoAudit = Omit<SeoAudit, 'hasSitemap' | 'hasRobotsTxt' | 'checkedInternalLinks' | 'brokenInternalLinks'> & { internalLinkUrls: string[] };
@@ -362,7 +364,7 @@ export async function auditUrl(rawUrl: string, fetcher: typeof fetch = fetch, al
   if (!hasSitemap) base.issues.push('sitemap.xml was not found');
   const brokenInternalLinks = linkResults.filter((result): result is NonNullable<typeof result> => result !== null);
   if (brokenInternalLinks.length) base.issues.push(`${brokenInternalLinks.length} broken internal link(s) found`);
-  return { ...base, checkedInternalLinks: linksToCheck.length, brokenInternalLinks, hasRobotsTxt, hasSitemap };
+  return { ...base, htmlBytes: new TextEncoder().encode(page.text).byteLength, checkedInternalLinks: linksToCheck.length, brokenInternalLinks, hasRobotsTxt, hasSitemap };
 }
 
 export function robotsAllows(text: string, pathname: string): boolean {

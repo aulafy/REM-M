@@ -71,3 +71,18 @@ Audience: non-technical founders, freelancers and small agencies. Today it is a 
 6. **Demo mode**: "Try with a sample business" creates a fictitious project with canned strategy, drafts and GEO history without needing any LLM, clearly labelled DEMO and deletable.
 7. **Settings simplification**: Basic (AI engine, language, folder for exports) vs Advanced (connectors, backups, Telegram, Hindsight, rate caps).
 Update README (screenshots section can stay placeholders), CHANGELOG, bump 0.4.0.
+
+# v0.5 PRODUCT PASS B — sellable to freelancers/agencies + fixes
+Fixes found in manual QA of v0.4 (do first):
+- Wizard step 1: the cloud-provider form is always visible even when a local Ollama model is selected; collapse it unless "Use a cloud provider" is chosen. Filter embedding-only models (nomic-embed, *embed*, bge-*) out of the chat model list. Mark models <7B with a "small — advice may be unreliable" badge.
+- Today card shows score 78 and "No site check yet" simultaneously (demo) — make consistent.
+- Demo drafts show "Sources used (0)": give demo drafts sample sources.
+Features:
+1. **White-label client reports**: "Export report" produces a single self-contained, print-friendly HTML (and print CSS for PDF) with: cover (project logo/name, agency name, accent color from Settings → Branding), executive summary, health score + issues with plain-language impact and fix, GEO visibility, top opportunities, 30-day plan, next steps. No OpenCMO branding unless "Powered by" toggle is on. Works offline.
+2. **Search Console import**: upload GSC "Queries" CSV (EN/ES column names) → opportunities table (impressions high, position 8–30, CTR low), each with a button "Draft an article for this query" that sends it to the Writer agent with the query and context.
+3. **Competitor comparison**: add up to 5 competitor URLs; run the deterministic audit on each (safe fetcher) and show a side-by-side table (title/meta quality, headings, schema, OG, speed proxy = html size), plus "where they beat you" list. No LLM needed for the table.
+4. **Multi-project overview** (agency view): a home screen listing all projects with health score, pending approvals, next scheduled post and overdue items; one-click open.
+5. **Landing page** in /docs (static, no build, GitHub Pages ready): hero, how it works (3 steps), features, "local-first & approval-first" trust section, comparison with okara.ai and SaaS tools (honest), FAQ, install section, MIT badge, "for freelancers & agencies" section about white-label reports. EN + ES versions. Plus docs/LAUNCH.md with a launch checklist (GitHub topics, Product Hunt/HN/Reddit post drafts, pricing ideas for an optional hosted/managed offering — clearly labelled as ideas).
+6. **Install in one command**: `npx`-style bin entry (`bin/opencmo.js`, with `--port`, `--data-dir`, opens browser), `start.command` for macOS double-click, Dockerfile already exists: verify and add `docker compose up` quickstart to README top.
+7. **Trust & safety page** in-app (Rules tab intro): plain-language explanation of what the AI can and cannot do, what leaves the computer, and where data is stored.
+Add tests, update README/CHANGELOG, bump 0.5.0, no new deps, no commits.

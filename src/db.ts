@@ -3,7 +3,7 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { createRequire } from 'node:module';
 import { AppError } from './errors.js';
-import type { Approval, Draft, DraftInput, DraftStatus, GeoHistory, HealthHistory, KnowledgeDocument, Project } from './types.js';
+import type { Approval, Draft, DraftInput, DraftStatus, GeoHistory, HealthHistory, KnowledgeDocument, Project, SearchOpportunity } from './types.js';
 import type { KnowledgeChunk } from './rag.js';
 import { draftQuality, normalizeProjectUrl } from './product.js';
 
@@ -120,6 +120,12 @@ export class Store {
         id INTEGER PRIMARY KEY AUTOINCREMENT, at TEXT NOT NULL, purpose TEXT NOT NULL, model TEXT NOT NULL, ms INTEGER NOT NULL,
         tokens_in INTEGER NOT NULL DEFAULT 0, tokens_out INTEGER NOT NULL DEFAULT 0, status TEXT NOT NULL, error TEXT NOT NULL DEFAULT ''
       );
+      CREATE TABLE IF NOT EXISTS search_opportunities (
+        id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        query TEXT NOT NULL, clicks REAL NOT NULL, impressions REAL NOT NULL, ctr REAL NOT NULL,
+        position REAL NOT NULL, score REAL NOT NULL, created_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS search_opportunities_project_score ON search_opportunities(project_id, score DESC);
     `);
     this.migrateColumn('projects', 'language', "TEXT NOT NULL DEFAULT 'en'");
     this.migrateColumn('projects', 'competitors', "TEXT NOT NULL DEFAULT '[]'");
@@ -174,7 +180,7 @@ export class Store {
     const project: Project = {
       id: randomUUID(), name, url: input.url?.trim() || '', description: input.description?.trim() || '',
       audience: input.audience?.trim() || '', tone: input.tone?.trim() || '', strategy: input.strategy || null, isDemo: Boolean(input.isDemo),
-      language: input.language === 'es' ? 'es' : 'en', competitors: Array.isArray(input.competitors) ? input.competitors.map(String).map((value) => value.trim()).filter(Boolean) : [],
+      language: input.language === 'es' ? 'es' : 'en', competitors: Array.isArray(input.competitors) ? input.competitors.map(String).map((value) => value.trim()).filter(Boolean).slice(0, 5) : [],
       createdAt: stamp, updatedAt: stamp,
     };
     this.db.prepare(`INSERT INTO projects (id,name,url,description,audience,tone,language,competitors,strategy,is_demo,created_at,updated_at)
@@ -197,7 +203,7 @@ export class Store {
   updateProject(id: string, input: { language?: string; competitors?: string[] }): Project {
     const project = this.getProject(id);
     const language = input.language === 'es' ? 'es' : input.language === 'en' ? 'en' : project.language || 'en';
-    const competitors = Array.isArray(input.competitors) ? input.competitors.map(String).map((value) => value.trim()).filter(Boolean) : project.competitors || [];
+    const competitors = Array.isArray(input.competitors) ? input.competitors.map(String).map((value) => value.trim()).filter(Boolean).slice(0, 5) : project.competitors || [];
     this.db.prepare('UPDATE projects SET language = ?, competitors = ?, updated_at = ? WHERE id = ?').run(language, JSON.stringify(competitors), now(), id);
     return this.getProject(id);
   }
@@ -209,7 +215,7 @@ export class Store {
     const audience = input.audience?.trim() || project.audience;
     const tone = input.tone?.trim() || project.tone;
     const language = input.language === 'es' ? 'es' : input.language === 'en' ? 'en' : project.language || 'en';
-    const competitors = Array.isArray(input.competitors) && input.competitors.length ? input.competitors.map(String).map((value) => value.trim()).filter(Boolean) : project.competitors || [];
+    const competitors = Array.isArray(input.competitors) && input.competitors.length ? input.competitors.map(String).map((value) => value.trim()).filter(Boolean).slice(0, 5) : project.competitors || [];
     this.db.prepare('UPDATE projects SET name = ?, description = ?, audience = ?, tone = ?, language = ?, competitors = ?, updated_at = ? WHERE id = ?').run(name, description, audience, tone, language, JSON.stringify(competitors), now(), id);
     return this.getProject(id);
   }
@@ -321,6 +327,22 @@ export class Store {
   listHealthHistory(projectId: string): HealthHistory[] {
     const rows = this.db.prepare('SELECT * FROM health_history WHERE project_id = ? ORDER BY created_at').all(projectId) as Array<{ id: string; project_id: string; score: number; report: string; created_at: string }>;
     return rows.map((row) => ({ id: row.id, projectId: row.project_id, score: row.score, report: JSON.parse(row.report), createdAt: row.created_at }));
+  }
+
+  replaceSearchOpportunities(projectId: string, inputs: Array<Omit<SearchOpportunity, 'id' | 'projectId' | 'createdAt'>>): SearchOpportunity[] {
+    this.getProject(projectId);
+    this.db.prepare('DELETE FROM search_opportunities WHERE project_id = ?').run(projectId);
+    const insert = this.db.prepare('INSERT INTO search_opportunities (id,project_id,query,clicks,impressions,ctr,position,score,created_at) VALUES (?,?,?,?,?,?,?,?,?)');
+    const stamp = now();
+    const rows = inputs.map((input) => ({ ...input, id: randomUUID(), projectId, createdAt: stamp }));
+    for (const item of rows) insert.run(item.id, item.projectId, item.query, item.clicks, item.impressions, item.ctr, item.position, item.score, item.createdAt);
+    return rows;
+  }
+
+  listSearchOpportunities(projectId: string): SearchOpportunity[] {
+    this.getProject(projectId);
+    const rows = this.db.prepare('SELECT * FROM search_opportunities WHERE project_id = ? ORDER BY score DESC, impressions DESC').all(projectId) as Array<{ id: string; project_id: string; query: string; clicks: number; impressions: number; ctr: number; position: number; score: number; created_at: string }>;
+    return rows.map((row) => ({ id: row.id, projectId: row.project_id, query: row.query, clicks: row.clicks, impressions: row.impressions, ctr: row.ctr, position: row.position, score: row.score, createdAt: row.created_at }));
   }
 
   addKnowledgeDocument(projectId: string, title: string, source: string, chunks: Array<{ text: string; embedding?: number[] | null }>): KnowledgeDocument {

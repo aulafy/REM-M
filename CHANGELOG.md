@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.5.0
+
+- Added offline, print-ready white-label client reports with configurable agency name, accent color, logo, and optional “Powered by OpenCMO”.
+- Added English/Spanish Search Console Queries CSV imports, ranked search opportunities, and one-click Writer drafts.
+- Added safe, deterministic comparisons for up to five competitors and a multi-project agency overview.
+- Added the bilingual static landing site and launch checklist under `docs/`.
+- Added the `opencmo` command, port and data-directory options, browser opening, macOS launcher, and Docker-first README quickstart.
+- Added the in-app trust and safety explanation.
+- Fixed wizard cloud-form visibility, embedding-only Ollama results, small-model badges, demo health copy, and demo draft sources.
+
 ## 0.4.0
 
 - Added the resumable first-run wizard with Ollama detection, cloud presets, connection testing, deterministic site health, strategy generation, knowledge import, and five starter drafts.

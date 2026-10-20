@@ -9,6 +9,7 @@ export const settingKeys = [
   'llmMaxPerHour', 'llm_max_per_hour', 'ragEmbeddings', 'embeddingModel', 'briefsEnabled', 'morningBriefTime', 'eveningBriefTime', 'briefTelegram',
   'hindsightEnabled', 'hindsightUrl',
   'markdownExportDir', 'uiLanguage', 'onboardingComplete',
+  'brandingAgencyName', 'brandingAccentColor', 'brandingLogoData', 'brandingPoweredBy',
 ] as const;
 
 export const secretSettingKeys = new Set<string>(['llmApiKey', 'wordpressPassword', 'githubToken', 'webhookSecret', 'telegramBotToken']);

@@ -18,6 +18,7 @@ import { HindsightMemory } from './hindsight.js';
 import { briefIsDue, buildBrief } from './briefs.js';
 import { dashboardActions, draftQuality, monthPlan, siteHealthFromAudit, starterDrafts } from './product.js';
 import { auditUrl } from './web.js';
+import { buildClientReport, competitorMetric, findSearchOpportunities, parseGscQueriesCsv, whereCompetitorsBeatYou } from './v05.js';
 
 export interface AppDependencies {
   store: Store;
@@ -40,6 +41,11 @@ function textField(value: unknown): string | undefined { return typeof value ===
 function modelIsSmall(value: string): boolean {
   const matches = [...value.toUpperCase().matchAll(/(?:^|[:_-]|\b)(\d+(?:\.\d+)?)\s*B\b/g)];
   return matches.some((match) => Number(match[1]) < 7);
+}
+
+function modelIsEmbeddingOnly(name: string): boolean {
+  const model = name.toLowerCase().split('/').at(-1) || name.toLowerCase();
+  return model.startsWith('bge-') || model.includes('embed');
 }
 
 function sse(operation: (send: (event: string, data: unknown) => void) => Promise<void>): Response {
@@ -136,7 +142,7 @@ export function createApp({ store, llm, config, fetcher = fetch, publicDir = pat
     await next();
   });
 
-  app.get('/api/health', (c) => c.json({ ok: store.integrityStatus === 'ok', version: '0.4.0', integrity: store.integrityStatus }));
+  app.get('/api/health', (c) => c.json({ ok: store.integrityStatus === 'ok', version: '0.5.0', integrity: store.integrityStatus }));
   app.get('/api/settings', (c) => {
     const stored = store.getSettings();
     const extras = Object.fromEntries(settingKeys.filter((key) => !secretSettingKeys.has(key) && stored[key] !== undefined).map((key) => [key, stored[key]]));
@@ -172,7 +178,7 @@ export function createApp({ store, llm, config, fetcher = fetch, publicDir = pat
         const response = await fetcher(`${base}/api/tags`, { signal: AbortSignal.timeout(2_500) });
         if (!response.ok) continue;
         const payload = await response.json() as { models?: Array<{ name?: string; size?: number; details?: { parameter_size?: string } }> };
-        const models = (payload.models || []).map((item) => ({ name: String(item.name || ''), size: Number(item.size || 0), parameterSize: String(item.details?.parameter_size || ''), small: modelIsSmall(String(item.details?.parameter_size || item.name || '')) })).filter((item) => item.name);
+        const models = (payload.models || []).map((item) => ({ name: String(item.name || ''), size: Number(item.size || 0), parameterSize: String(item.details?.parameter_size || ''), small: modelIsSmall(String(item.details?.parameter_size || item.name || '')) })).filter((item) => item.name && !modelIsEmbeddingOnly(item.name));
         return c.json({ available: true, baseUrl: `${base}/v1`, models });
       } catch { /* try the next local endpoint */ }
     }
@@ -192,6 +198,16 @@ export function createApp({ store, llm, config, fetcher = fetch, publicDir = pat
   });
 
   app.get('/api/projects', (c) => c.json({ projects: store.listProjects() }));
+  app.get('/api/overview', (c) => {
+    const now = Date.now();
+    const projects = store.listProjects().map((project) => {
+      const drafts = store.listDrafts(project.id); const health = store.listHealthHistory(project.id).at(-1) || null;
+      const future = drafts.filter((draft) => draft.scheduledAt && Date.parse(draft.scheduledAt) >= now).sort((a, b) => String(a.scheduledAt).localeCompare(String(b.scheduledAt)))[0] || null;
+      const overdue = drafts.filter((draft) => { const date = draft.scheduledAt || String(draft.metadata.plannedAt || ''); return date && Date.parse(date) < now && draft.status !== 'published'; }).length;
+      return { project, healthScore: health?.score ?? null, pending: drafts.filter((draft) => draft.status === 'pending').length, nextScheduled: future ? { id: future.id, title: future.title, at: future.scheduledAt } : null, overdue };
+    });
+    return c.json({ projects });
+  });
   app.get('/api/projects/check-url', (c) => c.json({ project: store.findProjectByUrl(c.req.query('url') || '') || null }));
   app.post('/api/projects', async (c) => {
     const body = await jsonBody(c);
@@ -285,11 +301,55 @@ export function createApp({ store, llm, config, fetcher = fetch, publicDir = pat
     return c.json({ health: latest ? { ...latest, trend: previous ? latest.score - previous.score : 0 } : null, pending: drafts.filter((draft) => draft.status === 'pending').length, schedule, lastBrief, actions: dashboardActions(project, drafts, geo.map((item) => item.createdAt), project.language === 'es' ? 'es' : 'en') });
   });
 
+  app.get('/api/projects/:id/report', (c) => {
+    const project = store.getProject(c.req.param('id')); const health = store.listHealthHistory(project.id).at(-1) || null; const geo = store.listGeoHistory(project.id).at(-1) || null;
+    const html = buildClientReport({ project, health, geo, drafts: store.listDrafts(project.id), opportunities: store.listSearchOpportunities(project.id), branding: store.getSettings() });
+    const filename = `${project.name.replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').toLowerCase() || 'client'}-marketing-report.html`;
+    c.header('content-type', 'text/html; charset=utf-8'); c.header('content-disposition', `attachment; filename="${filename}"`); c.header('cache-control', 'no-store');
+    return c.body(html);
+  });
+
+  app.get('/api/projects/:id/search-console', (c) => c.json({ opportunities: store.listSearchOpportunities(c.req.param('id')) }));
+  app.post('/api/projects/:id/search-console', async (c) => {
+    const body = await jsonBody(c); const csv = textField(body.csv); if (!csv) throw new AppError('csv is required');
+    let rows; try { rows = parseGscQueriesCsv(csv); } catch (error) { throw new AppError(error instanceof Error ? error.message : 'Invalid Search Console CSV'); }
+    const opportunities = store.replaceSearchOpportunities(c.req.param('id'), findSearchOpportunities(rows));
+    return c.json({ imported: rows.length, opportunities }, 201);
+  });
+  app.post('/api/projects/:id/search-console/:opportunityId/draft', async (c) => {
+    const project = store.getProject(c.req.param('id')); const opportunity = store.listSearchOpportunities(project.id).find((item) => item.id === c.req.param('opportunityId'));
+    if (!opportunity) throw new AppError('Search opportunity not found', 404);
+    if (actions.isPaused()) throw new AppError('Agents are paused by Stop all', 409);
+    const task = `Draft a useful, evidence-led article for the search query "${opportunity.query}". Search Console context: ${opportunity.impressions} impressions, ${(opportunity.ctr * 100).toFixed(2)}% CTR, average position ${opportunity.position.toFixed(1)}. Address the search intent without inventing claims.`;
+    const chunks = searchKnowledge(store.listKnowledgeChunks(project.id), opportunity.query, { k: 4 });
+    const outputs = await runAgent('writer', project, task, currentLLM('agent:writer:gsc'), fetcher, { allowPrivateFetch: config.allowPrivateFetch, knowledgeData: formatKnowledgeData(chunks) });
+    const drafts: Draft[] = [];
+    for (const output of outputs) {
+      output.metadata = { ...output.metadata, searchOpportunity: opportunity, sources: chunks.map((chunk, index) => ({ label: `K${index + 1}`, title: chunk.title, chunkId: chunk.id, documentId: chunk.documentId })) };
+      const outcome = await actions.runAction({ actor: 'writer', action: 'create_draft', params: { projectId: project.id, agentId: 'writer', output }, summary: `Search opportunity: ${opportunity.query}`, apply: () => store.createDraft(project.id, 'writer', output) });
+      if (outcome.result) drafts.push(outcome.result);
+    }
+    return c.json({ drafts, approvalRequired: drafts.length === 0 }, drafts.length ? 201 : 202);
+  });
+
+  app.post('/api/projects/:id/competitors/audit', async (c) => {
+    const project = store.getProject(c.req.param('id')); const body = await jsonBody(c);
+    const requested = Array.isArray(body.urls) ? body.urls.map(String) : project.competitors || [];
+    const urls = requested.map((value) => value.trim()).filter(Boolean); if (!project.url) throw new AppError('Project URL is required');
+    if (!urls.length) throw new AppError('Add at least one competitor URL');
+    if (urls.length > 5) throw new AppError('Add no more than five competitor URLs');
+    store.updateProject(project.id, { competitors: urls });
+    const audits = await Promise.all([project.url, ...urls].map((url) => auditUrl(url, fetcher, config.allowPrivateFetch)));
+    const comparison = audits.map(competitorMetric); const whereTheyBeatYou = whereCompetitorsBeatYou(comparison[0], comparison.slice(1));
+    return c.json({ comparison, whereTheyBeatYou });
+  });
+
   app.post('/api/demo', (c) => {
     const es = (c.req.query('language') || 'en') === 'es';
     const project = store.createProject({ name: 'Luna Studio', description: es ? 'Estudio ficticio de diseño web sostenible para pequeños negocios.' : 'A fictional sustainable web design studio for small businesses.', audience: es ? 'Fundadores y comercios locales' : 'Founders and local businesses', tone: es ? 'Cálido, claro y práctico' : 'Warm, clear, and practical', language: es ? 'es' : 'en', isDemo: true, strategy: es ? '# Posicionamiento\nDiseño web sostenible y claro para pequeños negocios.\n\n# Cliente ideal\nFundadores que necesitan una web eficaz sin un proceso complejo.\n\n# Canales\nLinkedIn, newsletter y contenido educativo.' : '# Positioning\nClear, sustainable web design for small businesses.\n\n# Ideal customer\nFounders who need an effective website without a complex process.\n\n# Channels\nLinkedIn, newsletter, and educational content.' });
     const examples = starterDrafts(project, '');
-    examples.forEach((input, index) => store.createDraft(project.id, 'demo', { ...input, metadata: { ...input.metadata, plannedAt: new Date(Date.now() + index * 86_400_000).toISOString(), demo: true } }));
+    const source = { label: 'K1', title: es ? 'Guía de marca de Luna Studio' : 'Luna Studio brand guide', documentId: 'demo-brand-guide' };
+    examples.forEach((input, index) => store.createDraft(project.id, 'demo', { ...input, metadata: { ...input.metadata, plannedAt: new Date(Date.now() + index * 86_400_000).toISOString(), demo: true, sources: [source] } }));
     store.addGeoHistory(project.id, 2, 5, []); store.addGeoHistory(project.id, 3, 5, []);
     store.addHealthHistory(project.id, 78, { issues: es ? ['Falta una descripción meta en una página'] : ['One page is missing a meta description'], demo: true });
     store.addKnowledgeDocument(project.id, es ? 'Guía de marca' : 'Brand guide', 'demo', [{ text: project.description }]);

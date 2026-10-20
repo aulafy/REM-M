@@ -77,6 +77,18 @@ export interface AgentRunOptions {
 export interface KnowledgeDocument { id: string; projectId: string; title: string; source: string; createdAt: string; }
 export interface Approval { id: string; agent: string; action: string; params: Record<string, unknown>; summary: string; decision: string; status: string; reason: string; createdAt: string; decidedAt: string | null; }
 
+export interface SearchOpportunity {
+  id: string;
+  projectId: string;
+  query: string;
+  clicks: number;
+  impressions: number;
+  ctr: number;
+  position: number;
+  score: number;
+  createdAt: string;
+}
+
 export interface AgentDefinition {
   id: string;
   name: string;

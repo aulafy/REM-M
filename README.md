@@ -6,7 +6,19 @@ It uses an OpenAI-compatible LLM endpoint and defaults to a local [Ollama](https
 
 ## Quick start
 
-Requirements: Node.js 20 or newer and an OpenAI-compatible model server.
+With Docker:
+
+```bash
+docker compose up --build
+```
+
+Or install and open it with one command (Node.js 20+):
+
+```bash
+npx github:raym33/opencmo --port 3000 --data-dir ./data
+```
+
+For development from a clone:
 
 ```bash
 cp .env.example .env
@@ -25,7 +37,18 @@ ollama serve
 
 Change `LLM_BASE_URL`, `LLM_API_KEY`, and `LLM_MODEL` in `.env` to use another compatible provider. `LLM_TIMEOUT_MS` controls the request timeout and defaults to 300000 (five minutes), which is useful for slower local models; it can also be changed in Settings. Project data is stored in `data/opencmo.sqlite`. Markdown publications go to `exports/` by default.
 
-## What v0.4 includes
+## What v0.5 includes
+
+- White-label, self-contained client reports with agency branding, executive summary, measured site findings, AI visibility, search opportunities, 30-day plan, next steps, and print-to-PDF CSS
+- Search Console Queries CSV import in English or Spanish, ranked low-CTR opportunities, and one-click Writer drafts grounded in query context
+- Deterministic side-by-side competitor checks for titles, descriptions, headings, structured data, Open Graph, and HTML size through the safe website fetcher
+- A multi-project agency overview with health, approvals, the next scheduled post, and overdue work
+- An English/Spanish GitHub Pages-ready landing site and launch checklist under `docs/`
+- A `npx`-style command with port/data-folder options and browser opening, plus a macOS `start.command`
+- A plain-language in-app trust and safety guide
+- Wizard QA fixes for cloud form visibility, embedding-model filtering, small-model labels, consistent demo health, and demo sources
+
+All v0.4 onboarding and daily-work features remain available:
 
 - A resumable, three-step first-run wizard with local Ollama model detection, cloud presets, connection testing, guided site profiling, live analysis progress, a deterministic site-health score, strategy, and five ready-to-review starter drafts
 - A project-level **Today** dashboard with health trend, three ranked next actions, pending approvals, the coming week's content, and the latest briefing
@@ -69,7 +92,7 @@ GitHub writes Markdown into `content/`. WordPress uses an application password. 
 
 ## API
 
-All request and response bodies are JSON.
+API request and response bodies are JSON except the report download, which returns a self-contained HTML file.
 
 ```text
 GET  /api/health
@@ -77,11 +100,16 @@ GET/PUT /api/settings
 POST /api/settings/test-llm
 GET  /api/engines/ollama
 GET  /api/projects
+GET  /api/overview
 POST /api/projects
 PATCH /api/projects/:id
 POST /api/projects/:id/merge
 DELETE /api/projects/:id                 (sample projects only)
 GET  /api/projects/:id/dashboard
+GET  /api/projects/:id/report
+GET/POST /api/projects/:id/search-console
+POST /api/projects/:id/search-console/:opportunityId/draft
+POST /api/projects/:id/competitors/audit
 POST /api/projects/:id/health
 POST /api/projects/:id/strategy
 POST /api/projects/:id/month-plan
@@ -155,7 +183,7 @@ Docker users can run `docker compose up --build`. To start the optional Ollama c
 
 | | OpenCMO | okara.ai |
 | --- | --- | --- |
-| License | MIT, source available | Proprietary service |
+| License | MIT, source available | See vendor terms |
 | Data location | Local SQLite by default | Hosted service |
 | Model choice | Any OpenAI-compatible endpoint, including Ollama | Service-managed |
 | Publishing safety | Explicit approval enforced in the state machine | See vendor documentation |
