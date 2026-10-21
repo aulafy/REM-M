@@ -48,7 +48,22 @@ ollama serve
 
 Change `LLM_BASE_URL`, `LLM_API_KEY`, and `LLM_MODEL` in `.env` to use another compatible provider. `LLM_TIMEOUT_MS` controls each individual LLM call and defaults to 300000 (five minutes); a long monthly job is not subject to one global timeout. `LLM_MAX_CONCURRENCY` defaults to 1 so local-model calls are serialized. Project data is stored in `data/opencmo.sqlite`. Markdown publications go to `exports/` by default.
 
-## What v0.9 includes
+## What v0.10 includes
+
+- A native **Analytics** workspace with Grafana-style threshold cards, SEO/GEO time series, content-output bars, channel mix, editorial flow, and local AI-operation telemetry
+- Project analytics over 7, 30, or 90 days, using only data already stored in OpenCMO
+- A Prometheus-compatible `/metrics` endpoint with privacy-conscious aggregate metrics
+- An optional, automatically provisioned Grafana + Prometheus stack with 90-day retention; see [`observability/README.md`](observability/README.md)
+
+Start the optional observability stack with:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.observability.yml --profile observability up -d
+```
+
+Then open Grafana at <http://127.0.0.1:3001/d/opencmo-marketing>. OpenCMO itself does not require Grafana or Docker for its built-in charts.
+
+All v0.9 live-visibility features remain available:
 
 - A **live AI visibility check** inside Advanced mode that asks real, search-enabled assistants the buyer questions relevant to each project
 - Direct support for Perplexity Sonar, OpenRouter with its web-search tool, and OpenAI's search-preview API
@@ -165,6 +180,7 @@ PATCH /api/projects/:id
 POST /api/projects/:id/merge
 DELETE /api/projects/:id                 (sample projects only)
 GET  /api/projects/:id/dashboard
+GET  /api/projects/:id/analytics?days=30
 GET  /api/projects/:id/report
 GET/POST /api/projects/:id/search-console
 POST /api/projects/:id/search-console/:opportunityId/draft
@@ -173,6 +189,7 @@ GET  /api/visibility/providers
 POST /api/projects/:id/ai-visibility
 GET  /api/projects/:id/geo-history
 POST /api/projects/:id/health
+GET  /metrics                              (Prometheus text format)
 POST /api/projects/:id/strategy
 POST /api/projects/:id/month-plan
 GET  /api/projects/:id/estimate?kind=month-plan
@@ -265,7 +282,7 @@ This table describes OpenCMO's design, not an independent feature audit of okara
 
 - Webflow and Framer publishing
 - Scheduled agent runs and approval reminders
-- Richer crawl-based SEO audits and analytics integrations
+- Richer crawl-based SEO audits and direct analytics-provider integrations
 - More connector-specific previews and publication history
 - Encrypted-at-rest credential storage and multi-user authentication for network deployments
 

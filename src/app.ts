@@ -23,6 +23,7 @@ import { bodySystemPrompt, completeWithTokens, conciseStrategyPrompt, dedupeOutl
 import { readFileSync } from 'node:fs';
 import { VISIBILITY_PROVIDERS, analyzeAnswer, askAssistant, fallbackQuestions, summarizeVisibility, type VisibilityCheck } from './visibility.js';
 import type { JobContext } from './jobs.js';
+import { buildProjectAnalytics, prometheusMetrics } from './analytics.js';
 
 export interface AppDependencies {
   store: Store;
@@ -393,6 +394,19 @@ export function createApp({ store, llm, config, fetcher = fetch, publicDir = pat
     return c.json({ health: latest ? { ...latest, trend: previous ? latest.score - previous.score : 0 } : null, pending: drafts.filter((draft) => draft.status === 'pending').length, schedule, lastBrief, actions: dashboardActions(project, drafts, geo.map((item) => item.createdAt), project.language === 'es' ? 'es' : 'en') });
   });
 
+  app.get('/api/projects/:id/analytics', (c) => {
+    const project = store.getProject(c.req.param('id'));
+    return c.json(buildProjectAnalytics({
+      project,
+      drafts: store.listDrafts(project.id),
+      health: store.listHealthHistory(project.id),
+      geo: store.listGeoHistory(project.id),
+      opportunities: store.listSearchOpportunities(project.id),
+      llm: store.llmStats(),
+      days: Number(c.req.query('days') || 30),
+    }));
+  });
+
   app.get('/api/projects/:id/report', (c) => {
     const project = store.getProject(c.req.param('id')); const health = store.listHealthHistory(project.id).at(-1) || null; const geo = store.listGeoHistory(project.id).at(-1) || null;
     const html = buildClientReport({ project, health, geo, drafts: store.listDrafts(project.id), opportunities: store.listSearchOpportunities(project.id), branding: store.getSettings() });
@@ -651,6 +665,12 @@ export function createApp({ store, llm, config, fetcher = fetch, publicDir = pat
   });
 
   app.get('/api/connectors', (c) => c.json({ connectors: configuredConnectors(store, config, fetcher).map(({ id, name, configured }) => ({ id, name, configured })) }));
+
+  app.get('/metrics', (c) => {
+    c.header('content-type', 'text/plain; version=0.0.4; charset=utf-8');
+    c.header('cache-control', 'no-store');
+    return c.body(prometheusMetrics(store));
+  });
 
   app.all('/api/*', (c) => c.json({ error: 'API route not found' }, 404));
   app.get('/', serveStatic({ path: path.join(publicDir, 'guided.html') }));

@@ -19,6 +19,7 @@
     <symbol id="i-calendar" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M7 3v4m10-4v4M3 10h18"/></symbol>
     <symbol id="i-book" viewBox="0 0 24 24"><path d="M4 5.5A3.5 3.5 0 0 1 7.5 2H11v18H7.5A3.5 3.5 0 0 0 4 23V5.5ZM20 5.5A3.5 3.5 0 0 0 16.5 2H13v18h3.5A3.5 3.5 0 0 1 20 23V5.5Z"/></symbol>
     <symbol id="i-report" viewBox="0 0 24 24"><path d="M6 3h9l4 4v14H6V3Z"/><path d="M15 3v5h5M9 16v-3m3 3V9m3 7v-5"/></symbol>
+    <symbol id="i-chart" viewBox="0 0 24 24"><path d="M4 19V5M4 19h16"/><path d="m7 15 4-4 3 2 5-7"/><circle cx="7" cy="15" r="1"/><circle cx="11" cy="11" r="1"/><circle cx="14" cy="13" r="1"/><circle cx="19" cy="6" r="1"/></symbol>
     <symbol id="i-settings" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06-2.83 2.83-.06-.06A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 .6 1.7 1.7 0 0 0-.4 1V21h-4v-.1A1.7 1.7 0 0 0 8.6 19.4a1.7 1.7 0 0 0-1.87.34l-.06.06-2.83-2.83.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-.6-1 1.7 1.7 0 0 0-1-.4H3v-4h.1A1.7 1.7 0 0 0 4.6 8.6a1.7 1.7 0 0 0-.34-1.87l-.06-.06 2.83-2.83.06.06A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-.6 1.7 1.7 0 0 0 .4-1V3h4v.1A1.7 1.7 0 0 0 15.4 4.6a1.7 1.7 0 0 0 1.87-.34l.06-.06 2.83 2.83-.06.06A1.7 1.7 0 0 0 19.4 9c.13.38.34.72.6 1 .28.27.64.4 1 .4h.1v4H21c-.38 0-.73.13-1 .4-.27.28-.47.62-.6 1Z"/></symbol>
     <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M4.93 4.93l1.42 1.42m11.3 11.3 1.42 1.42M2 12h2m16 0h2M4.93 19.07l1.42-1.42m11.3-11.3 1.42-1.42"/></symbol>
     <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20 15.5A8 8 0 0 1 8.5 4 8.5 8.5 0 1 0 20 15.5Z"/></symbol>
@@ -65,6 +66,7 @@
         <p class="nav-label">Workspace</p>
         <button id="agency-overview-button" data-nav="overview"><svg><use href="#i-grid"/></svg><span>Overview</span></button>
         <button data-nav-tab="today" class="active"><svg><use href="#i-home"/></svg><span data-i18n="today">Today</span></button>
+        <button data-nav-tab="analytics"><svg><use href="#i-chart"/></svg><span data-i18n="analytics">Analytics</span></button>
         <button data-nav-tab="inbox"><svg><use href="#i-inbox"/></svg><span data-i18n="inbox">Inbox</span><span id="nav-pending-count" class="count">0</span></button>
         <button data-nav-tab="calendar"><svg><use href="#i-calendar"/></svg><span data-i18n="calendar">Calendar</span></button>
         <button data-nav-tab="knowledge"><svg><use href="#i-book"/></svg><span data-i18n="knowledge">Knowledge</span></button>
@@ -100,6 +102,7 @@
       <div id="workspace" hidden>
         <div class="tabs secondary-tabs" role="tablist" aria-label="Project views">
           <button class="tab active" data-tab="today" data-i18n="today">Today</button>
+          <button class="tab" data-tab="analytics" data-i18n="analytics">Analytics</button>
           <button class="tab" data-tab="strategy" data-i18n="strategy">Strategy</button>
           <button class="tab" data-tab="knowledge" data-i18n="knowledge">Knowledge</button>
           <button class="tab" data-tab="agents" data-i18n="agents">Agents</button>
@@ -115,6 +118,12 @@
             <article class="card"><h3>Search Console opportunities</h3><p class="muted">Upload the Queries CSV export. It stays on this computer.</p><label class="file-action">Queries CSV <input id="gsc-file" type="file" accept=".csv,text/csv"></label><div id="gsc-opportunities"></div></article>
             <article class="card"><h3>Competitor comparison</h3><p class="muted">Add up to five public URLs. The table uses measured page data, not AI.</p><form id="competitor-form"><label>Competitor URLs, one per line<textarea id="competitor-urls" rows="4" placeholder="https://competitor.example"></textarea></label><button class="primary" type="submit">Run comparison</button></form><div id="competitor-results"></div></article>
           </section>
+        </section>
+
+        <section id="analytics" class="panel">
+          <div class="panel-heading analytics-heading"><div><p class="eyebrow">SEO · GEO · CONTENT · AI OPS</p><h2 data-i18n="analyticsTitle">Marketing analytics</h2><p data-i18n="analyticsHelp">Grafana-style trends and operational signals, calculated from data stored in OpenCMO.</p></div><div class="heading-actions"><div id="analytics-range" class="segmented" aria-label="Analytics date range"><button data-days="7">7d</button><button data-days="30" class="active">30d</button><button data-days="90">90d</button></div><button id="refresh-analytics" class="secondary" data-i18n="refresh">Refresh</button></div></div>
+          <div class="observability-note"><span class="status-dot connected"></span><div><strong>Grafana ready</strong><small>Prometheus can scrape <a href="/metrics" target="_blank" rel="noreferrer">/metrics</a>. The built-in dashboard works without Docker or external services.</small></div></div>
+          <div id="analytics-dashboard" class="analytics-dashboard skeleton" aria-live="polite"><div class="analytics-kpis"><div class="card"></div><div class="card"></div><div class="card"></div><div class="card"></div></div><div class="card chart-panel"></div><div class="card chart-panel"></div></div>
         </section>
 
         <section id="strategy" class="panel">

@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.10.0
+
+- Added a native, Grafana-inspired marketing analytics view with threshold KPIs, SEO/GEO trends, content-output bars, channel and editorial-flow distributions, and local AI-operation telemetry.
+- Added a project analytics API with 7, 30, and 90-day ranges and a Prometheus-compatible `/metrics` endpoint that exports aggregates without prompts, content bodies, credentials, URLs, or buyer questions.
+- Added an optional Docker observability stack with Prometheus, Grafana provisioning, 90-day retention, and an automatically loaded OpenCMO dashboard.
+- Added responsive, bilingual analytics UI, accessible SVG charts, Prometheus formatting tests, and dashboard/provisioning validation.
+
 ## 0.9.0
 
 - Added an in-app live AI visibility check for Perplexity, OpenRouter web search, and OpenAI web search.
