@@ -1,8 +1,10 @@
 # OpenCMO
 
-**A local-first marketing workspace that researches, plans, and drafts—while keeping every publication behind human approval.**
+**A local-first SEO, GEO, and AI marketing workspace with Ollama and OpenAI-compatible providers—while keeping every publication behind human approval.**
 
 OpenCMO gives founders, freelancers, and small agencies one professional workspace for strategy, brand knowledge, multi-channel drafts, content planning, client reporting, and controlled publishing. It works with any OpenAI-compatible model and defaults to local [Ollama](https://ollama.com/); the app itself requires no cloud service.
+
+The planned deterministic SEO engine, GEO observability, Search Console intelligence, agency workflows, and provider-neutral local/remote AI architecture are specified in [`docs/SEO_GEO_ROADMAP.md`](docs/SEO_GEO_ROADMAP.md).
 
 | Plan | Create | Review | Deliver |
 | --- | --- | --- | --- |
@@ -243,6 +245,8 @@ flowchart LR
 ```
 
 The Hono app is assembled in `src/app.ts`; dependencies such as the LLM and `fetch` are injectable. `src/db.ts` owns the SQLite schema and draft state machine. Agent implementations live in `src/agents.ts`, deterministic web analysis in `src/web.ts`, and publisher adapters in `src/connectors.ts`.
+
+Future SEO/GEO work follows a measure-first rule: deterministic crawlers and algorithms create evidence; local Ollama or an external compatible API may classify, explain, or draft from that evidence. See the [SEO, GEO, and Agency Intelligence Roadmap](docs/SEO_GEO_ROADMAP.md) for algorithms, evaluation criteria, and implementation order.
 
 ### Security model
 
