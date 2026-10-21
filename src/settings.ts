@@ -9,10 +9,11 @@ export const settingKeys = [
   'llmMaxPerHour', 'llm_max_per_hour', 'ragEmbeddings', 'embeddingModel', 'briefsEnabled', 'morningBriefTime', 'eveningBriefTime', 'briefTelegram',
   'hindsightEnabled', 'hindsightUrl',
   'markdownExportDir', 'uiLanguage', 'onboardingComplete',
+  'visibilityProvider', 'visibilityKey',
   'brandingAgencyName', 'brandingAccentColor', 'brandingLogoData', 'brandingPoweredBy',
 ] as const;
 
-export const secretSettingKeys = new Set<string>(['llmApiKey', 'wordpressPassword', 'githubToken', 'webhookSecret', 'telegramBotToken']);
+export const secretSettingKeys = new Set<string>(['visibilityKey', 'llmApiKey', 'wordpressPassword', 'githubToken', 'webhookSecret', 'telegramBotToken']);
 
 export function effectiveConfig(defaults: Config, settings: Record<string, string>): Config {
   const value = (key: string, fallback: string) => settings[key] ?? fallback;

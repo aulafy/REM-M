@@ -132,6 +132,17 @@
           <div class="panel-heading"><div><h2>Marketing agents</h2><p>Choose an agent, describe the assignment, then review its drafts.</p></div></div>
           <div id="agent-grid" class="agent-grid"></div>
           <section id="geo-history" class="card geo-history" hidden><h3>GEO visibility trend</h3><div></div></section>
+          <section id="live-visibility" class="card live-visibility">
+            <div class="panel-heading compact"><div><p class="eyebrow">Live web check</p><h3>Do AI assistants recommend your brand?</h3><p>Ask a search-enabled assistant the questions a buyer would use. This calls the provider directly and records citations, mentions, and named competitors.</p></div><span class="evidence-badge">Real answers · saved locally</span></div>
+            <form id="visibility-form" class="visibility-form">
+              <div class="two"><label>Assistant<select id="visibility-provider" required><option value="">Choose a provider…</option></select></label><label>Provider API key<input id="visibility-key" type="password" autocomplete="off" placeholder="Saved only in local SQLite"></label></div>
+              <div class="two"><label>Questions to ask<input id="visibility-count" type="number" min="1" max="8" value="5"></label><label>Custom questions (optional)<textarea id="visibility-questions" rows="3" placeholder="One buyer question per line"></textarea></label></div>
+              <p id="visibility-provider-help" class="muted">Choose a provider. Its API usage may incur a charge.</p>
+              <div id="visibility-progress" class="progress" hidden><span class="spinner"></span><span>Checking live answers…</span></div>
+              <button class="primary" type="submit">Run live visibility check</button>
+            </form>
+            <div id="visibility-results" hidden></div>
+          </section>
           <form id="run-form" class="card run-box">
             <label for="task">Assignment for <strong id="selected-agent">Writer</strong></label>
             <textarea id="task" placeholder="Example: Write an article about choosing analytics software for a small team" required></textarea>

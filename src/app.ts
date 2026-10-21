@@ -21,6 +21,7 @@ import { auditUrl } from './web.js';
 import { buildClientReport, competitorMetric, findSearchOpportunities, parseGscQueriesCsv, whereCompetitorsBeatYou } from './v05.js';
 import { bodySystemPrompt, completeWithTokens, conciseStrategyPrompt, dedupeOutlineTitles, enforceBodyLimit, jobEstimate, JobWorker, monthBatchSizes, parseOutlineBatch, trimWords } from './jobs.js';
 import { readFileSync } from 'node:fs';
+import { VISIBILITY_PROVIDERS, analyzeAnswer, askAssistant, fallbackQuestions, summarizeVisibility, type VisibilityCheck } from './visibility.js';
 import type { JobContext } from './jobs.js';
 
 export interface AppDependencies {
@@ -620,6 +621,35 @@ export function createApp({ store, llm, config, fetcher = fetch, publicDir = pat
     const outcome = await actions.runAction({ actor: 'human', action: 'publish', apply: () => publishDraft(store, config, fetcher, store.getDraft(c.req.param('id')), connectorId) });
     return c.json(outcome.result!);
   });
+
+  app.get('/api/visibility/providers', (c) => {
+    const settings = store.getSettings();
+    return c.json({ providers: VISIBILITY_PROVIDERS, selected: settings.visibilityProvider || '', keySaved: !!settings.visibilityKey });
+  });
+  app.post('/api/projects/:id/ai-visibility', async (c) => {
+    const project = store.getProject(c.req.param('id')); const body = await jsonBody(c); const settings = store.getSettings();
+    const provider = VISIBILITY_PROVIDERS.find((item) => item.id === (textField(body.provider) || settings.visibilityProvider));
+    if (!provider) throw new AppError('Choose which assistant to ask', 400);
+    const supplied = textField(body.apiKey); const freshKey = supplied && !supplied.startsWith('••••') ? supplied.trim() : '';
+    const apiKey = freshKey || (settings.visibilityProvider === provider.id ? settings.visibilityKey : '') || '';
+    if (!apiKey) throw new AppError('An API key for this assistant is required', 400);
+    const wanted = Math.max(1, Math.min(8, Math.round(Number(body.count) || 5)));
+    let questions = Array.isArray(body.questions) ? body.questions.map((q: unknown) => String(q).trim()).filter(Boolean).slice(0, wanted) : [];
+    if (!questions.length) {
+      try {
+        const raw = await currentLLM('visibility-questions').complete(`Write ${wanted} short, realistic questions a potential customer would type into an AI assistant when looking for what this business offers. Do not mention the business by name in more than one question. One question per line, no numbering, no introduction. Language: ${project.language === 'es' ? 'Spanish' : 'English'}.`, `Business: ${project.name}\nWhat it does: ${project.description}\nAudience: ${project.audience}`, undefined);
+        questions = raw.split('\n').map((line) => line.replace(/^[-*\d.)\s]+/, '').trim()).filter((line) => line.length > 8 && line.length < 220).slice(0, wanted);
+      } catch { /* the local AI is optional here: fall back to template questions */ }
+      if (questions.length < 3) questions = fallbackQuestions(project, wanted);
+    }
+    const checks: VisibilityCheck[] = [];
+    for (const question of questions) checks.push(analyzeAnswer(project, question, await askAssistant(fetcher, provider, apiKey, question, project.language || 'en')));
+    const summary = summarizeVisibility(checks);
+    if (freshKey) store.setSettings({ visibilityProvider: provider.id, visibilityKey: apiKey });
+    store.addGeoHistory(project.id, summary.visible, summary.total, checks);
+    return c.json({ result: { ...summary, provider: provider.name, searchesWeb: provider.searches, checks } });
+  });
+
   app.get('/api/connectors', (c) => c.json({ connectors: configuredConnectors(store, config, fetcher).map(({ id, name, configured }) => ({ id, name, configured })) }));
 
   app.all('/api/*', (c) => c.json({ error: 'API route not found' }, 404));

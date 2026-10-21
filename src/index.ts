@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { serve } from '@hono/node-server';
 import { createApp, runMaintenance } from './app.js';
@@ -15,10 +16,11 @@ const databaseFile = path.join(config.dataDir, 'opencmo.sqlite');
 applyPendingRestore(databaseFile);
 const store = new Store(databaseFile);
 const publicDir = fileURLToPath(new URL('../public', import.meta.url));
+const packageVersion = String((JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as { version?: string }).version || '0.0.0');
 const app = createApp({ store, config, publicDir });
 
 const server = serve({ fetch: app.fetch, port: config.port, hostname: config.host }, (info) => {
-  console.log(`OpenCMO v0.6 running at http://${config.host}:${info.port}`);
+  console.log(`OpenCMO v${packageVersion} running at http://${config.host}:${info.port}`);
 });
 server.on('error', (error) => {
   console.error(`OpenCMO could not start: ${error.message}`);

@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.9.0
+
+- Added an in-app live AI visibility check for Perplexity, OpenRouter web search, and OpenAI web search.
+- Buyer questions can be generated from the project profile or entered manually; results record exact answers, brand mentions, first-party citations, cited domains, and named competitors.
+- Provider credentials are masked in the UI, stored only in the local SQLite settings table, and never returned by the API.
+- Live checks feed the existing GEO history, dashboard trend, and white-label client report while remaining explicitly directional rather than claiming search-rank measurement.
+- Added provider request, citation parsing, scoring, key-isolation, persistence, and browser-surface regression tests.
+
 ## 0.8.0
 - Guided mode at `/` for non-technical users: seven-step plan, one highlighted step at a time with why / time / what happens next, plain-language copy (ES/EN), friendly errors, AI-connection helper (local, online with step-by-step key instructions, or demo), one-at-a-time review cards with a realistic preview, plain-text output for social networks and formatted newsletters/blog posts.
 - Full app moved to `/advanced`.
